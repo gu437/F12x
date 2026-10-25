@@ -31,7 +31,7 @@ import {
   listAIFindings, removeAIFinding
 } from "./memory.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.2";
 // 手动 Intruder 的中断控制器（面板「停止」→ tool:intruder_stop 中止当前爆破）
 let manualIntruderCtl = null;
 

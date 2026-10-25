@@ -12,7 +12,7 @@ export const appState = {
   interceptQueue: [],     // 待处理拦截队列（v1）
   activeSiteId: null,     // 当前站点工作区
   llmConfigured: false,   // LLM 是否已配置
-  version: "0.2.0"
+  version: "0.2.2"
 };
 
 // --- AI 任务运行态（原 3.2 taskState 保留，agent 引擎兼容） ---
