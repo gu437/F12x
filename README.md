@@ -164,6 +164,7 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 - Scope 的「AI 也受范围约束」开关仅持久化，AI 执行端尚未接线拦截（人工操作过滤 / 越界确认已生效）。
 - 站点「会话」页签是**按 scope 域名做文本匹配**（标题 / 目标 / 消息正文，先廉价匹配再最多深读 30 个会话详情），不是精确的"站点↔会话"外键；站点没填 scope 时无法匹配。
 - 拦截仅请求阶段（放行 / 改头 / 伪造响应 / 丢弃），暂无响应阶段拦截。
+- 采集是**单标签页**的：切换标签页会 detach 旧会话并清空网络 / 脚本 / 控制台缓冲（同时清空面板列表），旧站数据不保留；要对比两站请分别落 Issue / 黑板。
 - **同源 Repeater** 走页面上下文 `fetch`（自动带会话 Cookie，含 httpOnly），因此受页面 `connect-src` CSP 约束；12s 超时写在页面上下文内部，失败会自动回退扩展 `fetch`（无会话 Cookie）并在 `note` 里标注原因。
 - `get_cookies` 只读当前调试目标的 Cookie（`Network.getCookies`），不是第三方分区全量视角。
 - `get_skill` 只读取存储中已安装的技能内容，未安装时返回 NOT_FOUND，属预期。

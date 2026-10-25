@@ -31,6 +31,18 @@
 
 ## 0.2.2 — 2026-10-25
 
+### 2026-10-25 · fix：换标签页时的数据串页（单 tab 原则 + 先清后回填 + 事件按 tab 过滤）
+- 改了什么：attach 新 tab 前先 `chrome.debugger.detach` 旧会话；清空缓冲挪到历史回填**之前**；切换时向面板发 `network:snapshot` / `console:snapshot` 空快照；网络与脚本两个 `onEvent` 监听都加 `source.tabId !== debuggee.tabId` 过滤（与 `onDetach` 一致）；顺带清空旧 tab 的拦截队列。
+- 为什么：原来 `debuggee` 只换不 detach、事件不按 tab 过滤，A 站的后台请求会混进 B 站的列表；清缓冲写在回填之后，B 的历史刚回填就被清掉；面板不发 reset，旧行残留与新行混排。
+- 验证：`dev/run.mjs` 45/45（新增「CDP 事件必须按 tab 过滤」结构检查）；手动需重载后 A 站抓包 → 切 B → 列表应立即清空、且 A 的轮询不出现。
+- 提交：`2127121`
+
+### 2026-10-25 · refactor：设置与模型 CRUD 收归后台（面板不再直接读写存储键）
+- 改了什么：`router` 新增 `settings:get` / `settings:save` / `model:list`（设置键走白名单，后台是唯一写入方）；`models.js` 恢复 `saveModels` / `setActiveModel`（现在真的有调用方，`setActiveModel` 同步 `llmConfig`）；面板 `openSettings` / `saveSettings` / `modelsLoad` 改走消息，删除 `MODEL_KEY` / `MODEL_ACTIVE_KEY` 的直接读写。
+- 为什么：面板与后台各有一套模型 CRUD（面板直接写 `f12x_models_v1`，引擎侧 `models.js` 读），是典型的前后端两份实现，迟早漂移。
+- 验证：`dev/run.mjs` 45/45（新增结构检查：面板不得出现这两个存储键、必须走 `settings:get/save`）；手动打开设置改模型保存、重开设置确认值在。
+- 提交：`ca05ab1`
+
 ### 2026-10-25 · refactor：清理死代码与重复实现（-91 行，零行为变化）
 - 改了什么：删 `src/index.js`（汇总 barrel，全仓 0 引用）；删从未使用的导出 `LITE_EXCLUDED_TOOLS`、`busCounters`、`getInterceptQueue`、`renderWorkspaceMd`、`getActiveSite`；删 `models.js` 4 个死壳（`genModelId` / `saveModels` / `getActiveModel` / `setActiveModel`，面板有自己的模型 CRUD）；删写-only 的 `taskState.tabId`（字段 + agent/router 两处赋值，无读取方）；`agent.isLocalBaseUrl` 收敛到 `llm.isLoopbackBaseUrl`，消除两份回环地址列表。
 - 为什么：这些代码没有调用方或只有赋值没有读取，属于纯噪音；模型 CRUD 与回环判定各有两套实现，留着迟早漂移。
