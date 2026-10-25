@@ -4172,13 +4172,16 @@ function buildWorkflowSpec(conv) {
   const META = { recon: { zh: "页面 / 接口侦察", type: "messagebus" }, surface: { zh: "网络 / 脚本测绘", type: "cloud" }, attack: { zh: "重放 / 漏洞验证", type: "security" }, store: { zh: "黑板 / 记忆", type: "database" } };
   const COL = { recon: 3, surface: 4, attack: 5, store: 2 }; // tools lane 列（可与其它 lane 同 x，仅 lane 内互斥）
   const tools = [];
+  // 有批准闸门时，工具节点必须排在闸门**右侧**（否则 mainPath 出现 approval→tool 的回退，
+  // archify 校验直接报 "moves backward"——带批准的会话轨迹会整块渲染失败）。
+  const minToolCol = (approvals || rejects) ? pol : 0;
   for (const key of ORDER) {
     if (!G[key].c) continue;
-    tools.push({ id: "tool-" + key, lane: "tools", col: COL[key], type: META[key].type, label: META[key].zh, sublabel: (G[key].s[0] ? wfClip(G[key].s[0], 12) + " " : "") + "× " + G[key].c, width: 132 });
+    tools.push({ id: "tool-" + key, lane: "tools", col: Math.max(COL[key], minToolCol), type: META[key].type, label: META[key].zh, sublabel: (G[key].s[0] ? wfClip(G[key].s[0], 12) + " " : "") + "× " + G[key].c, width: 132 });
   }
-  if (G.store.c) tools.push({ id: "tool-store", lane: "tools", col: COL.store, type: META.store.type, label: META.store.zh, sublabel: (G.store.s[0] ? wfClip(G.store.s[0], 12) + " " : "") + "× " + G.store.c, width: 132 });
+  if (G.store.c) tools.push({ id: "tool-store", lane: "tools", col: Math.max(COL.store, minToolCol), type: META.store.type, label: META.store.zh, sublabel: (G.store.s[0] ? wfClip(G.store.s[0], 12) + " " : "") + "× " + G.store.c, width: 132 });
   nodes.push(...tools);
-  const lastCol = Math.max.apply(null, tools.map(t => t.col).concat(routerCol));
+  const lastCol = Math.max.apply(null, tools.map(t => t.col).concat(routerCol, (approvals || rejects) ? pol - 1 : 0));
   nodes.push({ id: "final", lane: "ui", col: lastCol, type: "backend", label: "最终结论", sublabel: finalText || "已输出回答", width: 132 });
   const edges = [];
   edges.push({ id: "e-user", from: "user", to: hasPlan ? "planner" : "router", variant: "default" });
