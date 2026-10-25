@@ -31,6 +31,12 @@
 
 ## 0.2.2 — 2026-10-25
 
+### 2026-10-25 · refactor：清理死代码与重复实现（-91 行，零行为变化）
+- 改了什么：删 `src/index.js`（汇总 barrel，全仓 0 引用）；删从未使用的导出 `LITE_EXCLUDED_TOOLS`、`busCounters`、`getInterceptQueue`、`renderWorkspaceMd`、`getActiveSite`；删 `models.js` 4 个死壳（`genModelId` / `saveModels` / `getActiveModel` / `setActiveModel`，面板有自己的模型 CRUD）；删写-only 的 `taskState.tabId`（字段 + agent/router 两处赋值，无读取方）；`agent.isLocalBaseUrl` 收敛到 `llm.isLoopbackBaseUrl`，消除两份回环地址列表。
+- 为什么：这些代码没有调用方或只有赋值没有读取，属于纯噪音；模型 CRUD 与回环判定各有两套实现，留着迟早漂移。
+- 验证：`dev/run.mjs` L0 **18/18** · 43/43 全绿（新增「导出必须有产品侧调用方」检查，测试专用导出走 `ALLOW_TEST_ONLY` 白名单）；被删符号的残留引用 grep **0**；无调用方，故行为不变。
+- 提交：`0441a84`
+
 ### 2026-10-25 · feat：Intruder 支持请求头与注入头
 - 改了什么：面板 Intruder 新增「请求头（key: value 每行一个）」与「注入头（形如 `X-Test: {payload}`）」；`intruderRun()` 解析后传 `headers` / `headerInject`（此前硬编码 `headers:{}`，后端早已支持）。
 - 为什么：鉴权头 / Content-Type / WAF 特征头这类最常用的测试在面板上根本做不了，只能绕 AI 或 eval_js；README 也把这条列为已知边界。
