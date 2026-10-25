@@ -32,6 +32,8 @@ import {
 } from "./memory.js";
 
 const VERSION = "0.2.0";
+// 手动 Intruder 的中断控制器（面板「停止」→ tool:intruder_stop 中止当前爆破）
+let manualIntruderCtl = null;
 
 // 工具调用包装：统一 try/catch + 来源记录
 async function toolRun(fn, source, auditBrief, sendResponse) {
@@ -277,10 +279,24 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "tool:intruder") {
     (async () => {
       await debuggerAttach().catch(() => {});
-      // P1：interruptible——面板可手动取消（abortPendingApproval 之外的独立取消在面板层处理）
-      const r = await dispatchTool("intruder", { url: message.url, method: message.method || "GET", headers: message.headers || {}, body: message.body || null, payloads: message.payloads || [], concurrency: message.concurrency || 3, includeBody: message.includeBody || false, rateLimitMs: message.rateLimitMs || 0 }, { mode: "manual" });
-      sendResponse({ ok: !r.error, ...r });
+      // P1：interruptible——面板「停止」经 tool:intruder_stop 触发本控制器，
+      // 由 intruder 内部逐请求检查 signal 并提前返回 interrupted（真正停下，不是只解 UI）
+      manualIntruderCtl = new AbortController();
+      const ctl = manualIntruderCtl;
+      try {
+        const r = await dispatchTool("intruder", { url: message.url, method: message.method || "GET", headers: message.headers || {}, body: message.body || null, payloads: message.payloads || [], concurrency: message.concurrency || 3, includeBody: message.includeBody || false, rateLimitMs: message.rateLimitMs || 0 }, { mode: "manual", signal: ctl.signal });
+        sendResponse({ ok: !r.error, ...r });
+      } finally {
+        if (manualIntruderCtl === ctl) manualIntruderCtl = null;
+      }
     })();
+    return true;
+  }
+  if (type === "tool:intruder_stop") {
+    // 手动 Intruder 中断入口：中止在跑的爆破（无在跑任务时 stopped=false，幂等）
+    const hit = !!manualIntruderCtl;
+    try { if (manualIntruderCtl) manualIntruderCtl.abort(); } catch (e) {}
+    sendResponse({ ok: true, stopped: hit });
     return true;
   }
   if (type === "tool:compare") {

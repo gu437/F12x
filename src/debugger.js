@@ -469,6 +469,8 @@ export async function eval_js(code, executionWorld = "main", allow_tools = []) {
 
   if (result.exceptionDetails) {
     return {
+      ok: false,
+      code: "TOOL_EXECUTION_ERROR",
       error: "JS 执行异常",
       details: result.exceptionDetails.text || result.exceptionDetails.exception?.description,
       result: result.result?.value
@@ -476,6 +478,7 @@ export async function eval_js(code, executionWorld = "main", allow_tools = []) {
   }
 
   return {
+    ok: true,
     value: result.result?.value,
     type: result.result?.type
   };
@@ -1341,7 +1344,7 @@ async function openInternalTab(url) {
 
 async function navigateInner(url) {
   if (!url || typeof url !== "string") {
-    return { error: "URL 参数必填" };
+    return { ok: false, error: "URL 参数必填" };
   }
   // 修复（审读高）：navigate 显式拒绝 javascript: URL——CDP Page.navigate 可执行任意页面代码，
   // 原放行形成对 eval_js 包装/审批门的绕过
@@ -1483,6 +1486,7 @@ export async function replay_request({ url, method = "GET", headers = {}, body =
   const sameOrigin = debuggee && debuggeeUrl
     ? (() => { try { return new URL(url).origin === new URL(debuggeeUrl).origin; } catch { return false; } })()
     : false;
+  let pageError = ""; // 页面上下文失败原因（非空 → 已回退扩展 fetch，结果里如实标注）
   if (sameOrigin) {
     try {
       // 功能残缺 P1-4：Set-Cookie 是 forbidden response header（resp.headers 读不到）——
@@ -1493,48 +1497,55 @@ export async function replay_request({ url, method = "GET", headers = {}, body =
         const cks = await chrome.cookies.getAll({ url: target.origin });
         for (const c of cks) beforeCookies[c.name] = c.value;
       } catch (e) { /* 忽略 */ }
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 15000);
+      // 15s 超时必须写在【页面上下文内部】：外层 AbortController 管不到页面里的 fetch
       const expr = `(async () => {
+        const ctl = new AbortController();
+        // 12s：给外层 dispatchTool 的 30s 工具超时留出"超时→回退扩展 fetch"的余量
+        const timer = setTimeout(() => ctl.abort(), 12000);
         try {
           const r = await fetch(${JSON.stringify(url)}, {
             method: ${JSON.stringify(String(method).toUpperCase())},
             headers: ${JSON.stringify(headers || {})},
             body: ${body !== null ? JSON.stringify(String(body)) : "undefined"},
             credentials: "include",
-            redirect: "follow"
+            redirect: "follow",
+            signal: ctl.signal
           });
           const t = await r.text();
           const h = {}; r.headers.forEach((v, k) => { h[k] = v; });
           return JSON.stringify({ status: r.status, statusText: r.statusText, responseHeaders: h, body: t.substring(0, 500000), redirected: r.redirected, finalUrl: r.url, session: true });
         } catch (e) {
-          return JSON.stringify({ fetchError: String(e && e.message || e) });
-        }
+          const aborted = !!(e && (e.name === "AbortError" || /abort/i.test(String(e && e.message))));
+          return JSON.stringify({ fetchError: aborted ? "页面上下文请求超时（12s）" : String(e && e.message || e) });
+        } finally { clearTimeout(timer); }
       })()`;
       const res = await sendCDP("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true });
-      clearTimeout(timer);
       if (res?.result?.value) {
         const parsed = JSON.parse(res.result.value);
-        if (parsed.fetchError) return { error: `页面上下文请求失败: ${parsed.fetchError}（可能被 CSP connect-src 拦截——已回退扩展 fetch，见下）`, body: "", status: 0 };
-        if (parsed.body.length > 500000) parsed.body = parsed.body.substring(0, 500000) + "...";
-        // 重放后对比 Cookie——Set-Cookie 盲区的替代证据（会话变化可推断）
-        let cookieChanges = null;
-        try {
-          const target = new URL(url);
-          const cks = await chrome.cookies.getAll({ url: target.origin });
-          const after = {};
-          for (const c of cks) after[c.name] = c.value;
-          const changed = [];
-          for (const name of new Set([...Object.keys(beforeCookies), ...Object.keys(after)])) {
-            if (beforeCookies[name] !== after[name]) {
-              changed.push(`${name}${after[name] !== undefined ? "=已更新" : "=已删除"}${beforeCookies[name] !== undefined && after[name] !== undefined ? `（${beforeCookies[name].substring(0, 8)}… → ${after[name].substring(0, 8)}…）` : ""}`);
+        if (parsed.fetchError) pageError = parsed.fetchError;
+        else {
+          if (parsed.body.length > 500000) parsed.body = parsed.body.substring(0, 500000) + "...";
+          // 重放后对比 Cookie——Set-Cookie 盲区的替代证据（会话变化可推断）
+          let cookieChanges = null;
+          try {
+            const target = new URL(url);
+            const cks = await chrome.cookies.getAll({ url: target.origin });
+            const after = {};
+            for (const c of cks) after[c.name] = c.value;
+            const changed = [];
+            for (const name of new Set([...Object.keys(beforeCookies), ...Object.keys(after)])) {
+              if (beforeCookies[name] !== after[name]) {
+                changed.push(`${name}${after[name] !== undefined ? "=已更新" : "=已删除"}${beforeCookies[name] !== undefined && after[name] !== undefined ? `（${beforeCookies[name].substring(0, 8)}… → ${after[name].substring(0, 8)}…）` : ""}`);
+              }
             }
-          }
-          if (changed.length) cookieChanges = changed;
-        } catch (e) { /* 忽略 */ }
-        return { ok: true, status: parsed.status, statusText: parsed.statusText, responseHeaders: parsed.responseHeaders, body: parsed.body, viaPage: true, session: "同源会话 Cookie（含 httpOnly）", cookieChanges, note: cookieChanges ? `重放改变了 ${cookieChanges.length} 个 Cookie（会话注入可见——Set-Cookie 是 forbidden response header 读不到，此为替代证据）：${cookieChanges.join("；")}` : "重放未改变会话 Cookie（无新会话注入）" };
-      }
-    } catch (e) { /* 页面不可达——回退扩展 fetch */ }
+            if (changed.length) cookieChanges = changed;
+          } catch (e) { /* 忽略 */ }
+          return { ok: true, status: parsed.status, statusText: parsed.statusText, responseHeaders: parsed.responseHeaders, body: parsed.body, viaPage: true, session: "同源会话 Cookie（含 httpOnly）", cookieChanges, note: cookieChanges ? `重放改变了 ${cookieChanges.length} 个 Cookie（会话注入可见——Set-Cookie 是 forbidden response header 读不到，此为替代证据）：${cookieChanges.join("；")}` : "重放未改变会话 Cookie（无新会话注入）" };
+        }
+      } else pageError = "页面上下文无返回（页面可能已导航/关闭）";
+    } catch (e) {
+      pageError = String((e && (e.message || e)) || e);
+    }
   }
   // === fallback：扩展 fetch（跨域 / 页面不可达）——无 Cookie（如实标注） ===
   try {
@@ -1562,7 +1573,7 @@ export async function replay_request({ url, method = "GET", headers = {}, body =
       responseHeaders: respHeaders,
       body: respBody,
       viaPage: false,
-      note: "扩展级 fetch（跨域/页面不可达）——未带会话 Cookie（浏览器 forbidden header 限制；跨域会话在浏览器内不可实现）。同源重放请确认页面已 attach。"
+      note: `扩展级 fetch（${pageError ? "页面上下文失败：" + pageError + "；已回退" : "跨域 / 页面不可达"}）——未带会话 Cookie（浏览器 forbidden header 限制；跨域会话在浏览器内不可实现）。同源重放请确认页面已 attach。`
     };
     if (resp.status >= 300 && resp.status < 400) {
       result.redirected = true;
