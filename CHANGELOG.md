@@ -35,7 +35,7 @@
 - 改了什么：`conversations_index_v2`（元数据索引，KB 级）+ `conv:<convId>`（单会话全文）。保存只写「一个会话 + 小索引」；列表只读索引；`deleteConversation` 按 `spill_index:<convId>` 精确清理；保存/删除用 Promise 链**串行**，避免索引读-改-写丢条目；旧 `conversations_v2` 启动时幂等迁移（`getConversation` 仍有懒迁移兜底）。顺带把 `executor` 的 spill 裁剪与 `debugger` 的截图清理从 `get(null)` 全库扫描改成索引（`spill_index:*` / `shots_index_v1`）。
 - 为什么：旧实现是**单一大数组**——agent 每 700ms flush 一次，每次都重写全部会话；列表接口还逐会话再读一遍全数组（O(N²)）；`spill`/截图清理每次都扫全库。这才是"AI 会话多了就卡"的根因，与会话数量本身无关。
 - 验证：`dev/run.mjs` 49/49（新增：`get(null)` 禁令、迁移/分键/级联删除/溢出索引用例）。基准（50 会话 × 200 条消息）：单次保存 **4.12MB → 93KB（45×）**，列表读取 **4.12MB → 9KB（495×）**。手动：重载后旧会话列表与详情正常、跑一轮任务看会话继续落库。
-- 提交：`de46e47`
+- 提交：`de46e47`（截图索引随 `23db301` 补提交）
 
 ### 2026-10-25 · fix：换标签页时的数据串页（单 tab 原则 + 先清后回填 + 事件按 tab 过滤）
 - 改了什么：attach 新 tab 前先 `chrome.debugger.detach` 旧会话；清空缓冲挪到历史回填**之前**；切换时向面板发 `network:snapshot` / `console:snapshot` 空快照；网络与脚本两个 `onEvent` 监听都加 `source.tabId !== debuggee.tabId` 过滤（与 `onDetach` 一致）；顺带清空旧 tab 的拦截队列。
