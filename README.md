@@ -8,6 +8,7 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 - 无自有后端、无遥测；LLM API Key 只保存在 `chrome.storage.local`，代码内无硬编码密钥。
 - 所有记录（Scope、Issue、Repeater 历史、待批准、黑板事实、会话审计与轨迹）同样只存本地。
 - 仓库在 `D:\dsh会话\F12x\F12x`（git 管理）；工作区级工程约定见上级目录 `AGENTS.md`；**每次改动的历史（改了什么 / 为什么 / 怎么验 / 提交）见 [`CHANGELOG.md`](CHANGELOG.md)**。
+- **完整使用手册（逐控件说明 + 19 张界面截图）见 [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md)**。
 
 ## 快速开始
 
@@ -157,6 +158,7 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 - `vendor/open-props` `vendor/open-props-theme.css` — 设计令牌
 - `vendor/archify/` — archify 引擎的浏览器适配（`renderers/` + `seam/` + `assets/`）：workflow / sequence / lifecycle 渲染器改为浏览器可运行；当前轨迹面板接入的是 **workflow** 引擎
 - `CHANGELOG.md` — 改动台账：每次实质改动一条（改了什么 / 为什么 / 验证 / 提交 hash），新条目置顶
+- `docs/USER_MANUAL.md` + `docs/images/` — 使用手册（逐控件说明与界面截图），随版本更新
 - 根目录其余 `*.md` — 设计 / 调研 / 回归记录：本地工作副本（含 `REGRESSION_*`）不入库
 
 ## 已知边界（如实说明）
