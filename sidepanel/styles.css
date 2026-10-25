@@ -1672,3 +1672,6 @@ body {
   }
   .view.fx-view-enter { animation: none !important; }
 }
+
+/* 长会话窗口化：加载更早消息的按钮 */
+.chat-load-earlier { display: block; margin: 8px auto 2px; }

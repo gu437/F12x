@@ -2449,6 +2449,11 @@ function pnInit() {
 }
 // 每帧一次的滚动监听：用户快速滚动/消息变高/新消息插入都基于真实几何重算（不轮询）
 
+// 长会话窗口化：默认只渲染最近 N 条，旧消息按需加载（400 条全量渲染在低配上明显卡顿）
+const CHAT_HISTORY_WINDOW = 60;
+let _chatShown = 0;
+let _chatShownConv = null;
+
 function renderChatHistory() {
   const box = $("ai-chat-msgs");
   box.innerHTML = "";
@@ -2511,6 +2516,34 @@ function renderChatHistory() {
     prevKey = key;
     msgsDedup.push(m);
   }
+  // —— 窗口化：只渲染最近 _chatShown 条；起点对齐到真实用户消息，避免从工具调用半截开始 ——
+  const convId = aiDetailConv?.convId || "";
+  if (_chatShownConv !== convId) { _chatShownConv = convId; _chatShown = CHAT_HISTORY_WINDOW; }
+  if (!_chatShown) _chatShown = CHAT_HISTORY_WINDOW;
+  let startIdx = Math.max(0, msgsDedup.length - _chatShown);
+  if (startIdx > 0) {
+    let cut = startIdx;
+    while (cut < msgsDedup.length && !(msgsDedup[cut].role === "user" && !msgsDedup[cut]._kind && !msgsDedup[cut]._sys)) cut++;
+    if (cut < msgsDedup.length) startIdx = cut;
+  }
+  const visible = msgsDedup.slice(startIdx);
+  const hidden = startIdx;
+  if (hidden > 0) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "mini-btn chat-load-earlier";
+    more.textContent = "↑ 加载更早的 " + hidden + " 条";
+    more.addEventListener("click", () => {
+      // 执行中禁止重渲染：aiDetailConv 此时不含本轮流式消息，重渲染会把实时内容清掉
+      if (chatUI.busy) { toast("AI 执行中：结束后再加载更早消息"); return; }
+      const b = $("ai-chat-msgs");
+      const h = b.scrollHeight, top = b.scrollTop;
+      _chatShown += CHAT_HISTORY_WINDOW;
+      renderChatHistory();
+      b.scrollTop = b.scrollHeight - h + top; // 保持视口不跳（renderChatHistory 末尾会归底）
+    });
+    box.appendChild(more);
+  }
   const flowForTool = (name, args) => {
     const argPreview = (() => { try { const a = JSON.parse(args || "{}"); return Object.entries(a).map(([k, v]) => k + "=" + String(v).substring(0, 40)).join(" ").substring(0, 140); } catch (e) { return String(args || "").substring(0, 140); } })();
     return "🔧 调用 <b>" + escapeHtml(name || "工具") + "</b>" + (argPreview ? "：<span class='cf-tag'>" + escapeHtml(argPreview) + "</span>" : "");
@@ -2526,7 +2559,7 @@ function renderChatHistory() {
       : "：" + escapeHtml(short));
   };
   const histToolPending = []; // 历史工具卡配对队列
-  for (const m of msgsDedup) {
+  for (const m of visible) {
     // 思考回放标记（纯思考轮）
     if (m._kind === "thinking" && m.role === "user") {
       const t2 = textOf(m);
