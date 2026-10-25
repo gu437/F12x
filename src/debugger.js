@@ -22,7 +22,22 @@ export async function debuggerAttach() {
   // 幂等：已附加到同一活动 tab 时跳过（拾取→任务等链路会重复调用 attach，
   // 重复 attach 会抛 "Another debugger is already attached"）
   if (appState.attached && debuggee && debuggee.tabId === tab.id) return;
-  const prevTabId = debuggee ? debuggee.tabId : null; // 换 tab 检测（审读中：换 tab 需清缓冲防上一页数据串入）
+  const prevTabId = debuggee ? debuggee.tabId : null;
+  const switching = prevTabId !== null && prevTabId !== tab.id;
+  if (switching) {
+    // 单 tab 原则（修）：先断开旧会话——否则旧 tab 的请求/日志会继续进同一个缓冲（且拦截队列混在一起）
+    try { await chrome.debugger.detach({ tabId: prevTabId }); } catch (e) { /* 已断开则忽略 */ }
+    debuggee = null;
+    // 先清后回填（修）：原来清缓冲写在历史回填之后，换 tab 时刚回填的历史会被自己清掉
+    resetNetworkRequests();
+    resetScriptList();
+    resetConsoleLogs();
+    appState.interceptQueue = [];
+    interceptManualPending = false;
+    // 通知面板立即清表，避免旧页面请求残留在列表里与新页面混排
+    busEmit("network:snapshot", { items: [] });
+    busEmit("console:snapshot", { items: [] });
+  }
   debuggee = { tabId: tab.id };
   debuggeeUrl = tab.url;
   try {
@@ -78,12 +93,7 @@ export async function debuggerAttach() {
       }
     }
   } catch (e) { /* 页面上下文不可用时忽略 */ }
-  // 换 tab 时清空上一页采集缓冲（网络/脚本/日志——防数据串页）
-  if (prevTabId !== null && prevTabId !== tab.id) {
-    resetNetworkRequests();
-    resetScriptList();
-    resetConsoleLogs();
-  }
+  // 换 tab 的清缓冲已在 attach 前完成（见上方 switching 分支）
   console.log("[CDP] Attached to tab", tab.id, tab.url);
   appState.attached = true;
   appState.debuggeeUrl = tab.url;
@@ -900,6 +910,8 @@ export function metadataSearch(query) {
 }
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
+  // 只处理当前 debuggee 的事件：多 tab 会话并存时（历史残留/外部 attach）不得混入别人的流量
+  if (!debuggee || source.tabId !== debuggee.tabId) return;
   if (method === "Network.requestWillBeSent") {
     // M6: 上限裁切
     if (networkRequests.length >= NETWORK_MAX) {
@@ -1164,6 +1176,7 @@ export function resetScriptList() {
 }
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (!debuggee || source.tabId !== debuggee.tabId) return; // 同上：只认当前会话
   if (method === "Debugger.scriptParsed") {
     scriptList.push({
       scriptId: params.scriptId,
