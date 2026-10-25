@@ -2236,7 +2236,4 @@ export async function interceptReleaseAll() {
   return { ok: true, released: queue.length };
 }
 
-// SW 生命周期防护：SW 复活时若残留未决拦截（持久化恢复场景），放行兜底
-export function getInterceptQueue() {
-  return appState.interceptQueue;
-}
+// SW 生命周期防护：SW 复活时若残留未决拦截（持久化恢复场景），放行兜底（见 recoverInterceptSnapshot）

@@ -705,7 +705,6 @@ export function handleMessage(message, sender, sendResponse) {
     if (taskState.abort) { try { taskState.abort.abort(); } catch (e) {} taskState.abort = null; }
     taskState.paused = true;
     taskState.taskRunning = false;
-    taskState.tabId = null;
     pushStatus({ status: "stopped", text: "已停止" });
     sendResponse({ ok: true });
     return true;

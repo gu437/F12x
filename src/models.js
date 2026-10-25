@@ -4,17 +4,9 @@
 const MODELS_KEY = "f12x_models_v1";
 const ACTIVE_KEY = "f12x_model_active";
 
-export function genModelId() {
-  return "m_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-
 export async function listModels() {
   const r = await chrome.storage.local.get(MODELS_KEY);
   return Array.isArray(r[MODELS_KEY]) ? r[MODELS_KEY] : [];
-}
-
-export async function saveModels(list) {
-  await chrome.storage.local.set({ [MODELS_KEY]: Array.isArray(list) ? list : [] });
 }
 
 export async function getModelById(id) {
@@ -27,11 +19,6 @@ export async function getActiveModelId() {
   const [r, list] = await Promise.all([chrome.storage.local.get(ACTIVE_KEY), listModels()]);
   const id = r[ACTIVE_KEY];
   return list.some(m => m.id === id) ? id : (list.length ? list[0].id : null);
-}
-
-export async function getActiveModel() {
-  const id = await getActiveModelId();
-  return id ? getModelById(id) : null;
 }
 
 export function modelToConfig(m) {
@@ -56,13 +43,4 @@ export async function applyModelForRun(convOverrideId) {
   const cfg = modelToConfig(m);
   await chrome.storage.local.set({ llmConfig: cfg });
   return { id: m.id, cfg };
-}
-
-// 设置页保存“设为默认”后调用：持久化默认 id 并同步 llmConfig；模型不存在返回 false
-export async function setActiveModel(id) {
-  const list = await listModels();
-  const m = list.find(x => x.id === id);
-  if (!m) return false;
-  await chrome.storage.local.set({ [ACTIVE_KEY]: id, llmConfig: modelToConfig(m) });
-  return true;
 }

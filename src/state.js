@@ -23,7 +23,6 @@ export const taskState = {
   paused: false,
   expertCalls: 0,
   taskRunning: false,
-  tabId: null,             // 任务发起 tab（遗留：content 发起场景）
   pendingTask: null,
   lastTaskReply: "",
   lastTaskRounds: 0,

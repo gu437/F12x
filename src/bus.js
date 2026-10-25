@@ -18,6 +18,3 @@ export function busEmit(event, data) {
     try { fn({ event, data }); } catch (e) { /* 单订阅者异常不影响其他 */ }
   }
 }
-
-// 调试用：事件名计数
-export const busCounters = {};

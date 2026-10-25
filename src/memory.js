@@ -440,48 +440,6 @@ export function buildWorkspaceSummary(ws) {
   return parts.join("\n\n");
 }
 
-// 渲染完整 md（导出/查看用）
-export function renderWorkspaceMd(convId, ws, convTitle) {
-  const lines = [];
-  lines.push(`# 会话工作区：${convTitle || convId}`);
-  lines.push(`> convId: ${convId} | 条目: ${ws?.entries?.length || 0}`);
-  const byType = { discovery: [], question: [], decision: [] };
-  for (const e of ws?.entries || []) (byType[e.type] || byType.discovery).push(e);
-  if (byType.discovery.length) {
-    lines.push("\n## 🧠 发现");
-    for (const e of byType.discovery) {
-      if (e.status === "promoted") {
-        lines.push(`### [${e.id}] ${e.author} · 已沉淀`);
-        lines.push(`- **${e.content}**`); // 已是 [已记入黑板 xxx] 标记
-        continue;
-      }
-      lines.push(`### [${e.id}] ${e.author} · ${new Date(e.ts).toLocaleString("zh-CN")}`);
-      lines.push(`- **内容**：${e.content}`);
-      if (e.evidence) lines.push(`- **证据**：${e.evidence}`);
-      lines.push(`- **状态**：${e.status}`);
-    }
-  }
-  if (byType.question.length) {
-    lines.push("\n## ❓ 疑问");
-    for (const e of byType.question) {
-      lines.push(`### [${e.id}] ${e.author} → ${e.to || "全员"} · ${new Date(e.ts).toLocaleString("zh-CN")}`);
-      lines.push(`- **疑问**：${e.content}`);
-      for (const r of e.replies || []) lines.push(`- **回复**（${r.author}）：${r.content}`);
-      lines.push(`- **状态**：${e.status}`);
-    }
-  }
-  if (byType.decision.length) {
-    lines.push("\n## ⚖️ 决策记录");
-    for (const e of byType.decision) {
-      lines.push(`### [${e.id}] ${e.author} · ${new Date(e.ts).toLocaleString("zh-CN")}`);
-      lines.push(`- **决策**：${e.content}`);
-      if (e.evidence) lines.push(`- **反驳记录**：${e.evidence}`);
-      lines.push(`- **状态**：${e.status}`);
-    }
-  }
-  return lines.join("\n");
-}
-
 // --- 第 2 层：轮次划分 + 预算裁剪 ---
 export const SKILLS_KEY = "skills_data";
 
@@ -604,11 +562,6 @@ export async function getActiveSiteId() {
 export async function setActiveSiteId(siteId) {
   await chrome.storage.local.set({ [ACTIVE_SITE_KEY]: siteId || null });
   return siteId;
-}
-
-export async function getActiveSite() {
-  const id = await getActiveSiteId();
-  return id ? getSite(id) : null;
 }
 
 // --- 站点笔记（用户手动标记的持久化事实，与 AI 黑板分离） ---

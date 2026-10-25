@@ -24,7 +24,7 @@ import {
 } from "./debugger.js";
 import {
   getLLMConfig, llmCallWithRetry, streamChatCompletion, classifyIntent, fallbackIntent, normalizeEndpoint,
-  estimateTokensV2, runChat, llmCallCounter, resetLLMCallCounter, keepAliveForLocal
+  estimateTokensV2, runChat, llmCallCounter, resetLLMCallCounter, keepAliveForLocal, isLoopbackBaseUrl
 } from "./llm.js";
 import {
   buildSkillsIndex, getProject, saveConversation, getActiveConversation, getConversation, setActiveConversation,
@@ -53,8 +53,8 @@ const GUARD_PROFILE = {
   lite: { adversarial: false, probeGate: false, planGate: false, finalReview: false, stuckExpert: false, overthink: false, liteTools: true }
 };
 export function isLocalBaseUrl(baseUrl) {
-  const host = String(baseUrl || "").replace(/^https?:\/\//i, "").split("/")[0].split(":")[0].toLowerCase();
-  return ["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"].includes(host);
+  // 收敛到 llm.isLoopbackBaseUrl（同一份回环地址判定，避免两处列表漂移）
+  return isLoopbackBaseUrl(baseUrl);
 }
 export async function resolveGuardProfile(baseUrl) {
   let mode = "auto";
@@ -62,8 +62,6 @@ export async function resolveGuardProfile(baseUrl) {
   if (mode !== "lite" && mode !== "full") mode = isLocalBaseUrl(baseUrl) ? "lite" : "full";
   return { mode, ...GUARD_PROFILE[mode] };
 }
-export const LITE_EXCLUDED_TOOLS = new Set(["rebuttal_check", "call_expert"]); // 精简档从工具面剔除云端机制工具
-
 export const LITE_CORE_TOOLS = new Set([
   "get_page_skeleton", "search_dom", "eval_js", "navigate",
   "get_network_requests", "get_network_request_detail", "get_cookies",
@@ -1670,7 +1668,6 @@ export function handleTaskMessage(message, sendResponse, onStatus = null) {
           taskState.taskRunning = false;
         }
       }
-      taskState.tabId = null; // 任务链完全结束（含续跑）→ 清除发起 tab 归属
     }
   })();
 }
