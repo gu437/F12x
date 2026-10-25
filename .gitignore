@@ -1,0 +1,25 @@
+# 打包/构建产物
+*.zip
+*.crx
+*.pem
+*.log
+
+# 环境与密钥（LLM key 等本地配置绝不上传）
+.env
+.env.*
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 本地调试
+node_modules/
+dist/
+
+# 本地开发过程文档（不入库）
+/压缩机制对齐_harness.md
+/方案_v3_专家回合.md
+/方案_v4_对抗性审查优化.md
+/轨迹可视化_调研.md
+/REGRESSION_OVERVIEW.md
+/REGRESSION_REPORT_1.md

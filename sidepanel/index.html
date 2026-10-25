@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>F12x</title>
+  <!-- 设计令牌（Open Props + F12x 黑白主题覆盖）→ 项目样式 -->
+  <link rel="stylesheet" href="../vendor/open-props/open-props.min.css" />
+  <link rel="stylesheet" href="../vendor/open-props-theme.css" />
+  <link rel="stylesheet" href="components.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ========== 头部 ========== -->
+    <header id="header">
+      <h1 class="logo">F12x</h1>
+      <select id="site-selector" class="site-selector" title="当前站点工作区">
+        <option value="">站点工作区：无</option>
+      </select>
+      <button id="site-create-quick" class="icon-btn hidden" title="新建站点工作区（站点数据按站点隔离：笔记/模板等归属当前站点）"><span data-icon="plus" data-size="14"></span></button>
+      <span class="spacer"></span>
+      <span id="llm-badge" class="llm-badge hidden" title="AI 已配置">AI</span>
+      <span id="status" class="status-dot" data-tip="调试器连接状态" title="调试器连接状态"></span>
+      <button id="settings-toggle" class="icon-btn" title="设置"><span data-icon="settings" data-size="15"></span></button>
+    </header>
+
+    <!-- ========== 导航列 + 内容区 ========== -->
+    <div id="layout">
+      <nav id="nav-rail" title="模块导航">
+        <button class="nav-item active" data-view="page" title="页面"><span data-icon="file-text" data-size="18"></span><span class="nav-label">页面</span></button>
+        <button class="nav-item" data-view="network" title="网络">
+          <span class="nav-icon-wrap"><span data-icon="bar-chart-3" data-size="18"></span><span id="network-dot" class="nav-dot hidden"></span></span>
+          <span class="nav-label">网络</span>
+        </button>
+        <button class="nav-item" data-view="request" title="请求"><span data-icon="arrow-right" data-size="18"></span><span class="nav-label">请求</span></button>
+        <button class="nav-item" data-view="cookie" title="Cookie"><span data-icon="cookie" data-size="18"></span><span class="nav-label">Cookie</span></button>
+        <button class="nav-item" data-view="script" title="脚本"><span data-icon="code" data-size="18"></span><span class="nav-label">脚本</span></button>
+        <button class="nav-item" data-view="site" title="站点"><span data-icon="globe" data-size="18"></span><span class="nav-label">站点</span></button>
+        <button class="nav-item" data-view="ai" title="AI 会话"><span data-icon="sparkles" data-size="18"></span><span class="nav-label">AI</span></button>
+      </nav>
+
+      <main id="content">
+
+        <!-- ===== 页面模块 ===== -->
+        <section id="view-page" class="view active">
+          <div class="toolbar">
+            <button id="page-inspect-btn" class="ctrl-btn" data-tip="Inspect 点选：点击页面元素生成选择器卡片"><span data-icon="search" data-size="13"></span> Inspect</button>
+            <button id="page-skeleton-btn" class="ctrl-btn">骨架</button>
+            <button id="page-forms-btn" class="ctrl-btn">表单</button>
+            <button id="page-shot-btn" class="ctrl-btn" title="截图（视口）"><span data-icon="download" data-size="13"></span> 截图</button>
+            <button id="page-shot-full-btn" class="ctrl-btn" title="整页截图">整页</button>
+          </div>
+          <div class="toolbar">
+            <input id="page-nav-input" class="text-input flex" placeholder="输入 URL 导航…" />
+            <button id="page-nav-btn" class="ctrl-btn">前往</button>
+          </div>
+          <div class="toolbar">
+            <input id="page-search-input" class="text-input flex" placeholder="CSS 选择器搜索 DOM…" />
+            <button id="page-search-btn" class="ctrl-btn"><span data-icon="search" data-size="13"></span></button>
+          </div>
+
+          <div id="page-inspect-card" class="inspect-card hidden"></div>
+          <div id="page-tree" class="tree-box">
+            <div class="placeholder">页面骨架（点击"骨架"按钮采集）</div>
+          </div>
+          <details class="block" id="js-console-block">
+            <summary><span data-icon="code" data-size="13"></span> JS 执行台</summary>
+            <textarea id="js-code" class="code-input" rows="3" placeholder="执行任意 JS（支持顶层 await）…"></textarea>
+            <div class="toolbar">
+              <button id="js-run-btn" class="ctrl-btn primary"><span data-icon="play" data-size="12"></span> 执行</button>
+              <button id="js-history-btn" class="ctrl-btn">历史</button>
+            </div>
+            <pre id="js-result" class="result-box"></pre>
+          </details>
+        </section>
+
+        <!-- ===== 网络模块 ===== -->
+        <section id="view-network" class="view">
+          <!-- 拦截待处理区 -->
+          <div id="intercept-banner" class="intercept-banner hidden">
+            <span class="ib-title"><span data-icon="zap" data-size="12"></span> 拦截中</span>
+            <span id="intercept-count" class="ib-count">0</span>
+            <button id="intercept-release-all" class="mini-btn">全部放行</button>
+          </div>
+          <!-- 拦截模式条 -->
+          <div class="toolbar wrap">
+            <span class="seg" id="intercept-mode-seg">
+              <button class="seg-btn" data-mode="off">关</button>
+              <button class="seg-btn" data-mode="manual_next">拦下一个</button>
+              <button class="seg-btn danger" data-mode="all">全量</button>
+            </span>
+            <button id="net-refresh-btn" class="ctrl-btn" title="刷新列表"><span data-icon="refresh-cw" data-size="12"></span></button>
+          </div>
+          <!-- 目标范围 Scope（用户主导边界；网络高亮/过滤 + 越界手动请求确认） -->
+          <div class="toolbar wrap" id="scope-bar">
+            <button id="scope-chip" class="ctrl-btn" title="目标范围管理：高亮/过滤/越界确认"><span data-icon="crosshair" data-size="12"></span> Scope <span id="scope-count"></span></button>
+            <label class="mini-inline" title="只显示落在 Scope 内的请求"><input type="checkbox" id="scope-only-chk" /> 仅显示范围内</label>
+            <span id="scope-hint" class="ai-composer-hint" style="flex:1"></span>
+          </div>
+          <!-- 过滤条 -->
+          <div class="toolbar wrap">
+            <input id="net-filter" class="text-input flex" placeholder="URL 正则过滤…" />
+            <input id="net-search" class="text-input flex" placeholder="元数据搜索（URL/请求头/响应头）…" />
+            <select id="net-filter-method" class="select-mini">
+              <option value="">方法</option><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>OPTIONS</option>
+            </select>
+            <select id="net-filter-status" class="select-mini">
+              <option value="">状态</option><option>2xx</option><option>3xx</option><option>4xx</option><option>5xx</option>
+            </select>
+            <select id="net-filter-domain" class="select-mini">
+              <option value="">域</option>
+            </select>
+            <select id="net-filter-type" class="select-mini">
+              <option value="">类型</option><option>xhr/fetch</option><option>script</option><option>style</option><option>image</option><option>document</option><option>font</option><option>other</option>
+            </select>
+            <button id="net-cols-btn" class="mini-btn" title="列配置">列▾</button>
+            <div id="net-cols-menu" class="cols-menu hidden">
+              <label><input type="checkbox" data-col="method" /> 方法</label>
+              <label><input type="checkbox" data-col="status" /> 状态</label>
+              <label><input type="checkbox" data-col="url" /> URL</label>
+              <label><input type="checkbox" data-col="type" /> 类型</label>
+              <label><input type="checkbox" data-col="size" /> 大小</label>
+              <label><input type="checkbox" data-col="src" /> 来源</label>
+            </div>
+          </div>
+          <div class="net-wrap">
+            <div id="net-table-wrap" class="net-table-wrap"></div>
+            <div id="net-pager" class="net-pager"></div>
+            <div id="net-detail" class="net-detail hidden">
+              <div class="tabs" id="net-detail-tabs">
+                <button class="tab active" data-tab="reqh">请求头</button>
+                <button class="tab" data-tab="reqb">请求体</button>
+                <button class="tab" data-tab="resh">响应头</button>
+                <button class="tab" data-tab="resb">响应体</button>
+                <button class="tab" data-tab="console">控制台</button>
+              </div>
+              <div id="net-detail-body" class="net-detail-body"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== 请求模块（Burp 四件套） ===== -->
+        <section id="view-request" class="view">
+          <div class="tabs">
+            <button class="tab active" data-tab="repeater">Repeater</button>
+            <button class="tab" data-tab="intruder">Intruder</button>
+            <button class="tab" data-tab="comparer">Comparer</button>
+            <button class="tab" data-tab="decoder">Decoder</button>
+          </div>
+
+          <!-- Repeater -->
+          <div id="req-repeater" class="req-tab active">
+            <div class="toolbar wrap">
+              <select id="rep-method" class="select-mini">
+                <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>OPTIONS</option><option>HEAD</option>
+              </select>
+              <input id="rep-url" class="text-input flex" placeholder="URL" />
+              <button id="rep-send" class="ctrl-btn primary"><span data-icon="send" data-size="12"></span> 发送</button>
+            </div>
+            <div class="rep-labels"><span>请求头（key: value 每行一个）</span></div>
+            <textarea id="rep-headers" class="code-input" rows="3" placeholder="Cookie: a=b&#10;Content-Type: application/json"></textarea>
+            <div class="rep-labels"><span>请求体</span></div>
+            <textarea id="rep-body" class="code-input" rows="3" placeholder='{"key":"value"}'></textarea>
+            <div class="rep-labels"><span id="rep-result-label">响应（状态 0）</span>
+              <span class="rep-actions">
+                <button id="rep-cmp-last" class="mini-btn" title="与上一次响应对比">对比上次</button>
+                <button id="rep-to-compare" class="mini-btn">→ Comparer</button>
+                <button id="rep-to-decoder" class="mini-btn">→ Decoder</button>
+              </span>
+            </div>
+            <pre id="rep-result" class="result-box"></pre>
+            <details id="rep-history-block">
+              <summary><span data-icon="history" data-size="12"></span> 历史
+                <button id="rep-save-site" class="mini-btn" title="把最近 Repeater 历史另存到当前站点工作区">存到站点</button>
+              </summary>
+              <div id="rep-history" class="rep-history"></div>
+            </details>
+          </div>
+
+          <!-- Intruder -->
+          <div id="req-intruder" class="req-tab">
+            <div class="toolbar wrap">
+              <select id="int-method" class="select-mini">
+                <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
+              </select>
+              <input id="int-url" class="text-input flex" placeholder="URL（用 {payload} 占位）" />
+            </div>
+            <div class="toolbar wrap">
+              <input id="int-payloads" class="text-input flex" placeholder="payload 列表（逗号分隔，支持文件粘贴）" />
+              <button id="int-payloads-file" class="ctrl-btn" title="从文本文件导入 payload">导入</button>
+            </div>
+            <input type="file" id="int-file-input" accept=".txt,.csv" class="hidden" />
+            <div class="toolbar wrap">
+              <label class="mini-label">并发 <input id="int-conc" type="number" class="num-input" value="3" min="1" max="20" /></label>
+              <label class="mini-label">限速ms <input id="int-rate" type="number" class="num-input" value="0" min="0" /></label>
+              <label class="mini-label"><input id="int-body-cb" type="checkbox" /> 返回响应体</label>
+              <button id="int-run" class="ctrl-btn primary"><span data-icon="play" data-size="12"></span> 开始</button>
+              <button id="int-stop" class="ctrl-btn hidden">停止</button>
+            </div>
+            <div class="toolbar wrap"><textarea id="int-body" class="code-input" rows="2" placeholder="请求体（含 {payload} 时同时注入）"></textarea></div>
+            <div class="int-summary" id="int-summary"></div>
+            <div id="int-results" class="int-results"></div>
+          </div>
+
+          <!-- Comparer -->
+          <div id="req-comparer" class="req-tab">
+            <div class="toolbar wrap">
+              <button id="cmp-swap" class="ctrl-btn" title="交换 A/B"><span data-icon="refresh-cw" data-size="12"></span></button>
+              <span class="rep-labels-inline">A</span>
+              <span class="rep-labels-inline">B</span>
+            </div>
+            <div class="cmp-boxes">
+              <textarea id="cmp-a" class="code-input flex" rows="6" placeholder="文本 A…"></textarea>
+              <textarea id="cmp-b" class="code-input flex" rows="6" placeholder="文本 B…"></textarea>
+            </div>
+            <button id="cmp-run" class="ctrl-btn primary">对比</button>
+            <pre id="cmp-result" class="result-box"></pre>
+          </div>
+
+          <!-- Decoder -->
+          <div id="req-decoder" class="req-tab">
+            <div class="toolbar wrap">
+              <select id="dec-mode" class="select-mini">
+                <option value="base64_decode">Base64 解码</option>
+                <option value="base64_encode">Base64 编码</option>
+                <option value="url_decode">URL 解码</option>
+                <option value="url_encode">URL 编码</option>
+                <option value="hex_decode">Hex 解码</option>
+                <option value="hex_encode">Hex 编码</option>
+              </select>
+              <button id="dec-run" class="ctrl-btn primary">转换</button>
+              <button id="dec-re-encode" class="ctrl-btn" title="将输出作为输入再次转换（链式）">→ 再编码</button>
+              <button id="dec-to-cmp" class="ctrl-btn">→ Comparer</button>
+            </div>
+            <textarea id="dec-input" class="code-input" rows="4" placeholder="输入文本…"></textarea>
+            <pre id="dec-output" class="result-box"></pre>
+          </div>
+        </section>
+
+        <!-- ===== Cookie 模块 ===== -->
+        <section id="view-cookie" class="view">
+          <div class="toolbar wrap">
+            <input id="cookie-filter" class="text-input flex" placeholder="域名/名称过滤…" />
+            <label class="mini-label"><input id="cookie-show-values" type="checkbox" checked /> 显示值</label>
+            <button id="cookie-refresh" class="ctrl-btn"><span data-icon="refresh-cw" data-size="12"></span></button>
+          </div>
+          <div id="cookie-table-wrap"></div>
+        </section>
+
+        <!-- ===== 脚本模块 ===== -->
+        <section id="view-script" class="view">
+          <div class="toolbar wrap">
+            <button id="script-refresh" class="ctrl-btn"><span data-icon="refresh-cw" data-size="12"></span> 刷新列表</button>
+            <input id="script-grep" class="text-input flex" placeholder="grep 关键字…" />
+          </div>
+          <div id="script-layout">
+            <div id="script-list" class="script-list"></div>
+            <div id="script-content" class="script-content">
+              <div class="placeholder">选择左侧脚本查看源码（行号 + grep 高亮）</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== 站点模块 ===== -->
+        <section id="view-site" class="view">
+          <div class="toolbar wrap">
+            <input id="site-name-input" class="text-input flex" placeholder="新建站点名称…" />
+            <button id="site-create-btn" class="ctrl-btn primary"><span data-icon="plus" data-size="12"></span> 创建</button>
+          </div>
+          <div id="site-list" class="site-list"></div>
+          <div id="site-detail" class="site-detail hidden">
+            <div class="tabs">
+              <button class="tab active" data-tab="facts">黑板</button>
+              <button class="tab" data-tab="templates">模板</button>
+              <button class="tab" data-tab="sessions">会话</button>
+            </div>
+            <div id="site-facts" class="site-pane active"></div>
+            <div id="site-templates" class="site-pane"></div>
+            <div id="site-sessions" class="site-pane"></div>
+          </div>
+        </section>
+
+        <!-- ===== AI 模块（会话列表 ↔ 聊天工作台：气泡对话 + 实时执行流 + 只读记录） ===== -->
+        <section id="view-ai" class="view">
+          <!-- 列表态工具条 -->
+          <div id="ai-list-bar" class="toolbar wrap">
+            <button id="ai-new-conv" class="ctrl-btn" title="新建会话（可选绑定项目）"><span data-icon="plus" data-size="12"></span> 新会话</button>
+            <button id="ai-new-project" class="ctrl-btn" title="新建项目 / 管理已有项目">新项目</button>
+            <span class="spacer"></span>
+          </div>
+          <!-- 会话列表态 -->
+          <div id="ai-list">
+            <div id="ai-convs"></div>
+          </div>
+          <!-- 聊天详情态：头部 + 两个独立页签（聊天 / 会话记录） -->
+          <div id="ai-detail" class="ai-detail-view hidden">
+            <div class="ai-detail-head">
+              <button id="ai-back" class="ctrl-btn" title="返回会话列表"><span data-icon="chevron-left" data-size="12"></span> 会话</button>
+              <span class="ai-detail-title-wrap">
+                <span id="ai-detail-title" class="ai-detail-title"></span>
+                <span id="ai-detail-meta" class="ai-detail-meta"></span>
+              </span>
+              <span class="ai-detail-actions">
+                <button id="ai-set-project" class="mini-btn" title="绑定/更换该会话的项目（黑板跨会话共享）">绑定项目</button>
+                <button id="ai-rename-btn" class="mini-btn" title="重命名会话">重命名</button>
+                <button id="ai-del-btn" class="mini-btn danger" title="删除会话（含其沉淀的黑板发现）">删除</button>
+              </span>
+            </div>
+            <!-- 详情内两个独立页签：聊天（默认）/ 会话记录 —— 一次只显示一个，互不遮挡 -->
+            <div class="ai-detail-tabs">
+              <button class="tab active" data-ai-tab="chat">聊天</button>
+              <button class="tab" data-ai-tab="records">会话记录</button>
+            </div>
+            <!-- 聊天页：消息流 + 底部输入（纯对话） -->
+            <div id="ai-chat" class="ai-chat ai-page ai-page-chat active">
+              <div id="ai-chat-msgs" class="ai-chat-msgs"></div>
+              <!-- Prompt 导航：聊天区右侧悬浮（绝对定位，不占布局列；默认按屏宽折叠/展开） -->
+              <aside id="pn-nav" class="pn-nav collapsed" aria-label="Prompt 导航">
+                <div class="pn-head">
+                  <button type="button" class="pn-toggle" id="pn-toggle" title="显示/隐藏 Prompt 导航">‹</button>
+                  <span class="pn-title">🧭 Prompt</span>
+                  <span id="pn-count" class="pn-count"></span>
+                </div>
+                <div id="pn-list" class="pn-list"></div>
+              </aside>
+              <!-- 执行计划条：固定在输入框上方，实时更新（不随消息滚动） -->
+              <div id="ai-plan-bar" class="ai-plan-bar hidden"></div>
+              <div id="ai-composer" class="ai-composer">
+                <div class="ai-composer-top">
+                  <span class="ai-mode-seg" id="ai-mode-seg" title="本轮发送以何种模式执行：任务模式可自主调用页面工具（截图/导航/分析等），对话模式仅问答不执行工具">
+                    <button type="button" class="mode-btn" data-mode="task">任务模式</button>
+                    <button type="button" class="mode-btn" data-mode="chat">对话模式</button>
+                  </span>
+                  <select id="ai-model-sel" class="ai-model-sel select-mini" title="本会话使用的模型：切换只对本会话生效（新会话默认跟随设置中的默认模型）"></select>
+                  <span id="ai-composer-hint" class="ai-composer-hint"></span>
+                  <label class="nothink-switch" title="禁思考：模型不输出思考过程，直接作答/行动（节省时间与 token；任务模式仍可调工具）">
+                    <input type="checkbox" id="ai-nothink-chk" />
+                    <span class="nothink-track"><span class="nothink-knob"></span></span>
+                    <span class="nothink-label">禁思考</span>
+                  </label>
+                </div>
+                <textarea id="ai-input" class="ai-input" rows="2" placeholder="下达任务 / 提问…（Enter 发送，Shift+Enter 换行）" autocomplete="off"></textarea>
+                <div class="ai-composer-ops">
+                  <span class="spacer"></span>
+                  <button id="ai-chat-stop" class="ctrl-btn hidden" title="终止当前 AI 任务"><span data-icon="square" data-size="10"></span> 停止</button>
+                  <button id="ai-chat-send" class="ctrl-btn primary" title="发送（Enter / Ctrl+Enter）"><span data-icon="send" data-size="12"></span> 发送</button>
+                </div>
+              </div>
+            </div>
+            <!-- 会话记录页：黑板 / 审计 / 轨迹 / 消息 子页签回看（与聊天页互斥） -->
+            <div id="ai-records" class="ai-records ai-page ai-page-records">
+              <div class="ai-records-head">
+                <span class="ai-records-title"><span data-icon="book-open" data-size="11"></span> 本次会话沉淀</span>
+              </div>
+              <div class="tabs">
+                <button class="tab active" data-dtab="findings">黑板</button>
+                <button class="tab" data-dtab="audit">审计</button>
+                <button class="tab" data-dtab="trajectory">轨迹</button>
+              </div>
+              <div class="ai-records-body">
+                <div id="ai-d-findings" class="site-pane active"></div>
+                <div id="ai-d-audit" class="site-pane"></div>
+                <div id="ai-d-trajectory" class="site-pane"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- ========== AI 审计日志（方案 4.1：状态条可展开） ========== -->
+    <div id="ai-audit" class="ai-audit hidden"></div>
+
+    <!-- ========== AI 状态条 ========== -->
+    <footer id="ai-bar" class="ai-bar">
+      <span id="ai-status-icon" class="ai-status-icon" data-icon="sparkles" data-size="13"></span>
+      <span id="ai-status-text" class="ai-status-text">AI 空闲</span>
+      <span class="spacer"></span>
+      <button id="ai-audit-btn" class="mini-btn" title="AI 动作审计日志（展开/收起）">审计</button>
+      <button id="ai-takeover-btn" class="mini-btn hidden" title="接管：暂停 AI，改由用户手动操作（继续后重新侦察续跑）">接管</button>
+      <button id="ai-resume-btn" class="mini-btn hidden" title="继续：重新侦察当前页面后续跑原任务">继续</button>
+      <button id="ai-stop-btn" class="mini-btn hidden" title="终止 AI 任务"><span data-icon="square" data-size="10"></span></button>
+    </footer>
+
+    <!-- ========== 设置弹层 ========== -->
+    <div id="settings-panel" class="overlay hidden">
+      <div class="overlay-content">
+        <h2>设置</h2>
+        <h3>AI 设置</h3>
+        <div class="settings-model-head">
+          <span>模型（每行一条：名称 + API Key + Base URL + 模型名）</span>
+          <button id="settings-model-add" class="mini-btn" type="button">+ 添加模型</button>
+        </div>
+        <div id="settings-models" class="settings-models"></div>
+        <div class="settings-hint">运行时按「会话所选模型 / 设置中的默认模型」调用；可在 AI 聊天输入框上方切换（只对本会话生效）。本地回环服务（Ollama / LM Studio 等 127.0.0.1 / localhost）的 Key <b>可留空</b>，保存时自动填占位。</div>
+        <label>思考硬上限（字符，0 = 不限）</label>
+        <input id="settings-thinklimit" type="number" min="0" step="100" placeholder="0 = 不限；>0 时超限自动改直接作答" />
+        <label>LLM API 域名白名单（每行一个）</label>
+        <textarea id="settings-llm" rows="4">https://api.deepseek.com
+https://api.openai.com
+https://api.anthropic.com
+http://localhost:11434</textarea>
+        <h3>AI 批准级别</h3>
+        <select id="settings-approval">
+          <option value="read_auto_write_approve">读自动 / 写需批准（默认）</option>
+          <option value="full_auto">全部自动</option>
+          <option value="all_approve">全部需批准</option>
+        </select>
+        <h3>AI 机制档位（本地小模型减负）</h3>
+        <select id="settings-guard">
+          <option value="auto">自动：本地模型(127.0.0.1/localhost)精简 · 云端完整</option>
+          <option value="lite">始终精简（关闭 对抗审查/专家复核/强制探测/plan 收尾硬门）</option>
+          <option value="full">始终完整（全部云端机制）</option>
+        </select>
+        <div class="settings-hint">精简档保留：工具批准闸、上下文压缩、重复工具提醒、未验证结论拦截。云端大模型自动恢复全部机制。</div>
+        <label class="mini-inline" style="margin:8px 0 2px" title="Arc iGPU+Vulkan 空闲后首个请求有数秒~数十秒唤醒延迟；开启后空闲期每 40s 发一次 1-token 极小请求保持活跃"><input type="checkbox" id="settings-localwarm" checked /> 本地空闲保活（减少空闲后“第一问”的延迟，仅本地模型生效）</label>
+        <div class="settings-actions">
+          <button id="settings-save" class="primary">保存</button>
+          <button id="settings-cancel" class="secondary">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 通用弹层容器 -->
+    <div id="modal-root"></div>
+  </div>
+
+  <script src="icons.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

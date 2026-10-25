@@ -1,0 +1,83 @@
+/* ============================================================
+   F12x 轻量组件（零依赖，纯 CSS 最佳实践）
+   1. tooltip：data-tip 属性悬浮提示（替代 title，可定制样式）
+   2. spinner：CSS 旋转加载圈（替代"思考中..."纯文字）
+   3. skeleton：骨架屏占位（消息加载）
+   ============================================================ */
+
+/* --- Tooltip（data-tip="文本" 的元素 hover 显示） --- */
+[data-tip] {
+  position: relative;
+  cursor: help;
+}
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: #141414;
+  color: #ffffff;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 4px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+/* 仅 hover 触发——focus 会在点击后停留导致提示一直显示（如模式切换按钮） */
+[data-tip]:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+/* 底部显示（元素靠上时用） */
+[data-tip][data-tip-pos="bottom"]::after {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
+/* --- Spinner（CSS 旋转圈） --- */
+.spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid #b3b3b3;
+  border-top-color: #141414;
+  border-radius: 50%;
+  animation: f12x-spin 0.7s linear infinite;
+  vertical-align: -2px;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+.spinner.lg { width: 20px; height: 20px; border-width: 3px; }
+.spinner.dark { border-color: #ffffff66; border-top-color: #ffffff; }
+@keyframes f12x-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --- Skeleton（骨架屏） --- */
+.skeleton {
+  display: inline-block;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 37%, #f0f0f0 63%);
+  background-size: 400% 100%;
+  animation: f12x-skeleton 1.4s ease infinite;
+  border-radius: 4px;
+  color: transparent;
+  user-select: none;
+  pointer-events: none;
+}
+@keyframes f12x-skeleton {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}

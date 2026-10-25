@@ -1,0 +1,76 @@
+/* ============================================================
+   F12x 主题 tokens —— 语义色覆盖（黑白灰阶）
+   引入顺序：open-props.min.css → 本文件 → styles.css
+   后续新增 UI 一律使用 var(--xxx)，禁止硬编码颜色
+   ============================================================
+   数值来源（全部照抄成熟实现，不自行设计）：
+   - 灰阶表面：deepseek-harness web dist（design-platform.css 亮色）
+     neutral-bluish 阶：00=#fff / 50=rgb(249,250,251) / 75=rgb(241,243,245)
+     / 100=rgb(235,238,242) / 200=rgb(225,229,238)
+   - 发丝边框：DSH border-l1..l4 = rgba(0,0,0,.04/.10/.12/.16)
+   - 交互层：DSH interactive-bg-hover/active = rgba(38,49,72,.06/.10)
+   - 投影：DSH --dsw-shadow-lv1..lv3（原文值）
+   - 圆角：DSH 控件惯例 —— 32px 高按钮 radius 8px、24px 标签 pill radius
+     12px、弹窗(380px) radius 24px
+   - 字体栈：DSH --dsw-font-family（含 PingFang/雅黑 中文现代栈）
+   ============================================================ */
+:root {
+  /* --- 语义表面（背景层级） --- */
+  --surface-1: #ffffff;   /* DSH neutral-bluish-00（主背景） */
+  --surface-2: #f9fafb;   /* DSH neutral-bluish-50（侧栏/输入底） */
+  --surface-3: #f1f3f5;   /* DSH neutral-bluish-75（气泡/hover） */
+  --surface-4: #e6e7e9;   /* 发丝边框（白底上约等于 DSH border-l2 0.10 视觉） */
+  --surface-5: #d3d5d9;   /* 次级边框（DSH bluish-200~300 之间） */
+  --surface-6: #8f8f8f;   /* 状态点 */
+
+  /* --- 语义文字（灰阶贴近 DSH label 轴，柔化高对比纯灰） --- */
+  --text-1: #141414;      /* 主文字 */
+  --text-2: #3c4148;      /* 次级文字 */
+  --text-3: #6b7078;      /* 辅助文字 */
+  --text-4: #8f959d;      /* 弱文字/占位 */
+
+  /* --- 品牌与强调（黑白主题：一切强调 = 纯黑） --- */
+  --brand: #000000;
+  --link: #2b2b2b;
+  --on-brand: #ffffff;
+
+  /* --- 语义状态（黑白表达：黑度/反转区分） --- */
+  --error: #000000;
+  --error-bg: rgba(0, 0, 0, 0.08);
+  --success: #000000;
+  --warning: #000000;
+
+  /* --- 置信度徽章（黑白三档） --- */
+  --conf-high-bg: #000000;
+  --conf-high-fg: #ffffff;
+  --conf-med-bg: #d9d9d9;
+  --conf-med-fg: #141414;
+  --conf-low-bg: #f0f0f0;
+  --conf-low-fg: #707070;
+
+  /* --- 交互层（DSH interactive-bg-hover/active 值） --- */
+  --hover-tint: rgba(38, 49, 72, 0.06);
+  --active-tint: rgba(38, 49, 72, 0.10);
+
+  /* --- 阴影（DSH shadow-lv1..lv3 原文值） --- */
+  --shadow-1: 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+  --shadow-2: 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04);
+  --shadow-3: 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04);
+  --shadow-4: 0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08);
+
+  /* --- 字体栈（DSH --dsw-font-family 原文；code 由 styles.css --mono 提供） --- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  /* --- 圆角（DSH 控件惯例值，去除非线性 open-props 档位） --- */
+  --radius-xs: 8px;   /* DSH 32px 高按钮 border-radius:8px / 28px 图标钮 8px */
+  --radius-sm: 12px;  /* DSH 24px 标签 pill border-radius:12px */
+  --radius-md: 24px;  /* DSH 380px 登录/弹窗 border-radius:24px */
+  --radius-lg: 28px;
+
+  /* --- 间距快捷别名（复用 Open Props sizes） --- */
+  --space-1: var(--size-1, 0.25rem);
+  --space-2: var(--size-2, 0.5rem);
+  --space-3: var(--size-3, 1rem);
+  --space-4: var(--size-4, 1.25rem);
+  --space-5: var(--size-5, 1.5rem);
+}

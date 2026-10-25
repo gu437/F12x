@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "F12x",
+  "description": "用户主导的浏览器工具台（F12 全能力 + Burp 精简版）+ 内建 AI 聊天工作台",
+  "version": "0.2.1",
+  "permissions": [
+    "debugger",
+    "sidePanel",
+    "storage",
+    "webRequest",
+    "unlimitedStorage",
+    "cookies",
+    "tabs",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "commands": {
+    "open-panel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+F"
+      },
+      "description": "呼出/聚焦 F12x 工具台"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "F12x",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src *"
+  }
+}
