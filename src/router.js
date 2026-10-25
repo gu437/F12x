@@ -6,7 +6,7 @@
 import { taskState, appState, pushStatus } from "./state.js";
 import { busEmit } from "./bus.js";
 import { getLLMConfig, runChat, warmLocalModel } from "./llm.js";
-import { applyModelForRun, getModelById } from "./models.js";
+import { applyModelForRun, getModelById, listModels, saveModels, getActiveModelId, setActiveModel } from "./models.js";
 import { normalizeError } from "./errors.js";
 // AI 引擎静态导入（MV3 Service Worker 禁止动态 import()——HTML 规范限制；
 // "AI 隔离"由运行时 LLM 配置检查保证：未配置时工具台 100% 可用，不依赖 AI 模块加载隔离）
@@ -76,6 +76,42 @@ export function handleMessage(message, sender, sendResponse) {
           version: VERSION
         }
       });
+    })();
+    return true;
+  }
+  // === 设置 / 模型（后台是唯一读写方；面板只发消息）===
+  if (type === "settings:get") {
+    (async () => {
+      try {
+        const keys = ["llmConfig", "approvalLevel", "llm_endpoints", "f12x_thinking_limit", "f12x_guard_profile", "f12x_local_warm"];
+        const settings = await chrome.storage.local.get(keys);
+        const [models, activeId] = await Promise.all([listModels(), getActiveModelId()]);
+        sendResponse({ ok: true, settings, models, activeId: activeId || "" });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "settings:save") {
+    (async () => {
+      try {
+        const ALLOW = ["approvalLevel", "llm_endpoints", "f12x_thinking_limit", "f12x_guard_profile", "f12x_local_warm", "llmConfig"];
+        const src = message.settings || {};
+        const patch = {};
+        for (const k of ALLOW) if (src[k] !== undefined) patch[k] = src[k];
+        if (Object.keys(patch).length) await chrome.storage.local.set(patch);
+        if (Array.isArray(message.models)) await saveModels(message.models);
+        if (message.activeId) await setActiveModel(message.activeId);
+        sendResponse({ ok: true, activeId: message.activeId || "" });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "model:list") {
+    (async () => {
+      try {
+        const [models, activeId] = await Promise.all([listModels(), getActiveModelId()]);
+        sendResponse({ ok: true, models, activeId: activeId || "" });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;
   }

@@ -9,6 +9,11 @@ export async function listModels() {
   return Array.isArray(r[MODELS_KEY]) ? r[MODELS_KEY] : [];
 }
 
+// 写模型列表（唯一入口：router 的 model:save / settings:save）——面板不再直接触碰存储
+export async function saveModels(list) {
+  await chrome.storage.local.set({ [MODELS_KEY]: Array.isArray(list) ? list : [] });
+}
+
 export async function getModelById(id) {
   if (!id) return null;
   const list = await listModels();
@@ -27,6 +32,15 @@ export function modelToConfig(m) {
     baseUrl: String(m?.baseUrl || "").trim(),
     model: String(m?.model || "").trim()
   };
+}
+
+// 设为默认：持久化 active id 并同步 llmConfig（引擎唯一读取点）；模型不存在返回 false
+export async function setActiveModel(id) {
+  const list = await listModels();
+  const m = list.find(x => x.id === id);
+  if (!m) return false;
+  await chrome.storage.local.set({ [ACTIVE_KEY]: id, llmConfig: modelToConfig(m) });
+  return true;
 }
 
 // 解析“本次运行该用哪个模型”→ 写入 llmConfig；convOverrideId 为空 = 用全局默认。

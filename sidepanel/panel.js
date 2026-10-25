@@ -3139,8 +3139,15 @@ function initSettings() {
 }
 
 async function openSettings() {
-  const cfg = await new Promise((res) => chrome.storage.local.get({ llmConfig: null, approvalLevel: "read_auto_write_approve", llm_endpoints: null, f12x_thinking_limit: 0, f12x_guard_profile: "auto", f12x_local_warm: true }, res));
-  await modelsLoad();
+  // 设置一律走后台（后台是唯一读写方）：settings:get 返回白名单键 + 模型列表 + activeId
+  const r = await api("settings:get");
+  const cfg = (r && r.ok && r.settings) ? r.settings : {};
+  if (r && r.ok) {
+    modelsCache = Array.isArray(r.models) ? r.models : [];
+    modelActiveId = r.activeId || "";
+  } else {
+    await modelsLoad();
+  }
   // 旧版单配置迁移：仅有 llmConfig 而无模型列表 → 生成一条“默认”，避免升级后配置丢失
   const c = cfg.llmConfig || {};
   if (!modelsCache.length && (c.baseUrl || c.model || c.apiKey)) {
@@ -3179,9 +3186,20 @@ async function saveSettings() {
   cfg.f12x_thinking_limit = Number.isFinite(tl) && tl > 0 ? tl : 0;
   // 运行引擎读取的仍是 llmConfig：用“默认模型”同步（会话覆盖在运行前单独解析）
   cfg.llmConfig = active ? { apiKey: active.apiKey, baseUrl: active.baseUrl, model: active.model } : { apiKey: "", baseUrl: "", model: "" };
-  cfg[MODEL_KEY] = modelsCache;
-  cfg[MODEL_ACTIVE_KEY] = active ? active.id : "";
-  await new Promise((res) => chrome.storage.local.set(cfg, res));
+  // 统一交给后台落库（模型 CRUD + 设置键的唯一入口）；面板不再直接写这些键
+  const saved = await api("settings:save", {
+    settings: {
+      approvalLevel: cfg.approvalLevel,
+      f12x_guard_profile: cfg.f12x_guard_profile,
+      f12x_local_warm: cfg.f12x_local_warm,
+      f12x_thinking_limit: cfg.f12x_thinking_limit,
+      llm_endpoints: cfg.llm_endpoints,
+      llmConfig: cfg.llmConfig
+    },
+    models: modelsCache,
+    activeId: active ? active.id : ""
+  });
+  if (!saved || !saved.ok) return toast("保存失败：" + ((saved && saved.error) || "后台无响应"));
   $("settings-panel").classList.add("hidden");
   const who = active ? (modelName(active) || active.model || active.baseUrl) : "（无）";
   toast(active ? ("设置已保存｜默认模型：" + who) : "设置已保存（未配置任何模型）");
@@ -3192,18 +3210,16 @@ async function saveSettings() {
 // ============================================================
 // ===== 多模型：设置列表 + 聊天切换（同一份缓存） =====
 // ============================================================
-const MODEL_KEY = "f12x_models_v1";
-const MODEL_ACTIVE_KEY = "f12x_model_active";
 let modelsCache = [];
 let modelActiveId = "";
 function modelGid() { return "m_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function modelsLoad() {
-  return new Promise((res) => chrome.storage.local.get({ [MODEL_KEY]: [], [MODEL_ACTIVE_KEY]: "" }, (r) => {
-    modelsCache = Array.isArray(r[MODEL_KEY]) ? r[MODEL_KEY] : [];
-    modelActiveId = r[MODEL_ACTIVE_KEY] || "";
+  // 模型列表由后台（models.js）统一持有；面板只缓存用于渲染
+  return api("model:list").then((r) => {
+    modelsCache = (r && r.ok && Array.isArray(r.models)) ? r.models : [];
+    modelActiveId = (r && r.ok && r.activeId) || "";
     if (modelActiveId && !modelsCache.some(m => m.id === modelActiveId)) modelActiveId = "";
-    res();
-  }));
+  }).catch(() => { modelsCache = []; modelActiveId = ""; });
 }
 function modelName(m) { if (!m) return ""; return (String(m.name || "").trim() || String(m.model || "").trim() || "未命名"); }
 function modelFind(id) { return modelsCache.find(m => m.id === id) || null; }
