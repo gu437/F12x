@@ -1647,15 +1647,15 @@ export async function screenshot({ fullPage = false } = {}) {
       seq = Number(seqR?.result?.value) || 0;
     } catch (e) { seq = Math.floor(Math.random() * 1000); }
     const key = `shot_${Date.now()}_${seq}`;
-    // 修复（审读中）：先清旧图再写新图——原"先写后清"在配额满时新图写失败、清理永不执行
-    const all = await chrome.storage.local.get(null);
-    const shots = Object.keys(all).filter(k => k.startsWith("shot_"))
-      .sort((a, b) => { const na = Number(a.replace(/^shot_(\d+).*$/, "$1")); const nb = Number(b.replace(/^shot_(\d+).*$/, "$1")); return na - nb; });
+    // 用 shots_index_v1 维护截图键列表（原来 get(null) 全库扫描，每次截图都扫一遍所有数据）
+    const idxR = await chrome.storage.local.get(SHOTS_INDEX_KEY);
+    let shots = Array.isArray(idxR[SHOTS_INDEX_KEY]) ? idxR[SHOTS_INDEX_KEY] : [];
     while (shots.length >= 5) {
       const old = shots.shift();
       await chrome.storage.local.remove(old);
     }
-    await chrome.storage.local.set({ [key]: shot.data });
+    shots.push(key);
+    await chrome.storage.local.set({ [key]: shot.data, [SHOTS_INDEX_KEY]: shots });
     return { ok: true, key, size: Math.round(shot.data.length / 1024) + "KB", note: "截图已保存，可在前端查看（不进入 LLM 上下文）" };
   } catch (e) {
     return { error: `截图失败: ${e.message}` };
@@ -2095,6 +2095,7 @@ let interceptManualPending = false; // 等待"拦下一个"的未触发标志
 // SW 意外死亡后 CDP 连接断开，页面被拦请求由浏览器自动恢复放行；
 // 恢复时清空快照并提示"连接中断，已放行 N 个请求"（放行优于挂死）
 const SNAP_KEY = "f12x_intercept_snapshot_v1";
+const SHOTS_INDEX_KEY = "shots_index_v1"; // 截图键索引（保留最近 5 张，替代全库扫描）
 let _snapTimer = null;
 // 修复（审读高）：队列每次入队/处置都全量序列化写 storage（无去抖）→ 高频写放大。
 // 快照写改为 250ms 尾部去抖；模式切换（setMode，低频关键态）仍即时写
