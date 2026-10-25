@@ -7,7 +7,7 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 
 - 无自有后端、无遥测；LLM API Key 只保存在 `chrome.storage.local`，代码内无硬编码密钥。
 - 所有记录（Scope、Issue、Repeater 历史、待批准、黑板事实、会话审计与轨迹）同样只存本地。
-- 仓库在 `D:\dsh会话\F12x\F12x`（git 管理）；工作区级工程约定见上级目录 `AGENTS.md`。
+- 仓库在 `D:\dsh会话\F12x\F12x`（git 管理）；工作区级工程约定见上级目录 `AGENTS.md`；**每次改动的历史（改了什么 / 为什么 / 怎么验 / 提交）见 [`CHANGELOG.md`](CHANGELOG.md)**。
 
 ## 快速开始
 
@@ -145,7 +145,7 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 
 ③ **手动回归**（改完必过）：重载扩展 → `Ctrl+Shift+F` → 页面骨架 / 网络列表+详情 / Repeater 发送 / Intruder 开始与结果表 / Decoder / Cookie 读取 / 脚本源码；碰 AI 链路再补：对话一问、任务模式一轮（含批准条）、停止 / 接管 / 继续。日志前缀：`[F12x]` `[Agent]` `[CDP]` `[ExpertRound]` `[Blackboard]` `[Checkpoint]`。
 
-**git 约定**：一主题一提交，中文信息带 `feat:` / `fix:` / `docs:` / `refactor:` / `perf:` / `chore:` 前缀，正文写清"改了什么 + 为什么 + 怎么验"。本地过程文档（`方案_v*`、`REGRESSION_*`、`压缩机制对齐_harness.md` 等）不入库，见 `.gitignore`。
+**git 约定**：一主题一提交，中文信息带 `feat:` / `fix:` / `docs:` / `refactor:` / `perf:` / `chore:` 前缀，正文写清"改了什么 + 为什么 + 怎么验"。每次实质改动必须同时在 [`CHANGELOG.md`](CHANGELOG.md) 追加一条（模板与规则见文件头）。本地过程文档（`方案_v*`、`REGRESSION_*`、`压缩机制对齐_harness.md` 等）不入库，见 `.gitignore`。
 
 ## 目录结构
 
@@ -154,7 +154,8 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 - `sidepanel/` — 工具台 UI：`index.html` + `panel.js`（视图 / 会话 / 渲染逻辑，经典脚本非 module）+ `styles.css` `components.css`（DSH 风格聊天排版、轨迹轨道、Scope；视图切换含 View Transition，偏好减弱动效时自动关闭）+ `icons.js`（内联 SVG）
 - `vendor/open-props` `vendor/open-props-theme.css` — 设计令牌
 - `vendor/archify/` — archify 引擎的浏览器适配（`renderers/` + `seam/` + `assets/`）：workflow / sequence / lifecycle 渲染器改为浏览器可运行；当前轨迹面板接入的是 **workflow** 引擎
-- 根目录 `*.md` — 设计 / 调研 / 回归记录：本地工作副本（含 `REGRESSION_*`）不入库
+- `CHANGELOG.md` — 改动台账：每次实质改动一条（改了什么 / 为什么 / 验证 / 提交 hash），新条目置顶
+- 根目录其余 `*.md` — 设计 / 调研 / 回归记录：本地工作副本（含 `REGRESSION_*`）不入库
 
 ## 已知边界（如实说明）
 
