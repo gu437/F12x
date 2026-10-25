@@ -1364,11 +1364,19 @@ async function intruderRun() {
   const rateLimitMs = Math.max(0, Number($("int-rate").value) || 0);
   const includeBody = $("int-body-cb").checked;
   const body = $("int-body").value || null;
+  // 请求头（key: value 每行一个）——工具层一直支持，面板此前硬编码 {}，导致鉴权头类测试做不了
+  const headers = {};
+  ($("int-headers").value || "").split("\n").forEach((line) => {
+    const i = line.indexOf(":");
+    if (i > 0) { const k = line.substring(0, i).trim(); if (k) headers[k] = line.substring(i + 1).trim(); }
+  });
+  // 注入头：值里的 {payload} 由每个 payload 替换（对应工具层 headerInject）
+  const headerInject = ($("int-headerinject")?.value || "").trim() || null;
   $("int-run").classList.add("hidden");
   $("int-stop").classList.remove("hidden");
   $("int-summary").textContent = `正在发送 ${payloads.length} 个请求（并发 ${concurrency}）…`;
   $("int-results").innerHTML = "";
-  const r = await api("tool:intruder", { url, method, headers: {}, body, payloads, concurrency, includeBody, rateLimitMs });
+  const r = await api("tool:intruder", { url, method, headers, body, payloads, concurrency, includeBody, rateLimitMs, headerInject });
   $("int-run").classList.remove("hidden");
   $("int-stop").classList.add("hidden");
   if (!r.ok) { $("int-summary").textContent = "失败：" + r.error; return; }
@@ -2113,6 +2121,34 @@ function chatFlowLine(cls, html) {
   chatScrollSoft();
   return d;
 }
+// 研讨条目实时可见：executor 的 workspace_note → pushStatus({type:"workspace"})，原先无消费者
+function chatWorkspaceNote(entry) {
+  if (!entry) return;
+  const kind = entry.type === "question" ? "疑问" : entry.type === "decision" ? "决策" : "发现";
+  const raw = String(entry.content || "").replace(/\s+/g, " ").trim();
+  const brief = raw.length > 120 ? raw.substring(0, 120) + "…" : raw;
+  const id = entry.id ? " " + escapeHtml(String(entry.id)) : "";
+  const to = entry.to ? " → " + escapeHtml(String(entry.to)) : "";
+  const promoted = entry.status === "promoted" ? " · 已沉淀黑板" : "";
+  chatFlowLine("", "📝 研讨" + kind + id + to + "：" + escapeHtml(brief) + promoted);
+}
+// 会话增量落库回执（agent.flushSession → conversation:changed）：
+// 列表页实时刷新；详情记录页按 2s 节流刷新（轨迹走 archify 渲染，不能每次 flush 都跑）
+let _ccRefreshAt = 0, _ccTimer = null;
+function chatOnConversationChanged(convId) {
+  if (!convId) return;
+  const list = $("ai-list");
+  if (list && !list.classList.contains("hidden")) { renderAISessions().catch(() => {}); return; }
+  if (!chatUI.open || chatUI.convId !== convId) return;
+  const rec = $("ai-records");
+  if (!rec || rec.classList.contains("hidden") || !rec.classList.contains("active")) return;
+  const now = Date.now();
+  const wait = 2000 - (now - _ccRefreshAt);
+  if (wait <= 0) { _ccRefreshAt = now; chatRefreshRecords().catch(() => {}); }
+  else if (!_ccTimer) {
+    _ccTimer = setTimeout(() => { _ccTimer = null; _ccRefreshAt = Date.now(); chatRefreshRecords().catch(() => {}); }, wait);
+  }
+}
 function chatClearTyping() {
   if (chatUI.typing) { chatUI.typing.remove(); chatUI.typing = null; }
 }
@@ -2749,6 +2785,8 @@ function chatOnStatus(st) {
       chatUI.lastContentAt = Date.now();
     }
   }
+  // 会话增量回执：即使详情未打开（列表态）也要处理，所以放在 open 早退之前
+  if (st && st.type === "conversation:changed") { chatOnConversationChanged(st.convId); return; }
   if (!chatUI.open || !chatUI.convId || !st || typeof st !== "object") return;
   const t = st.type || (typeof st.status === "string" ? st.status : "");
   if (t === "audit") return; // 审计已有专门 tab，聊天里不重复刷
@@ -2799,6 +2837,7 @@ function chatOnStatus(st) {
   if (t === "reasoning_end") { chatReasonSeal(); return; }
   if (t === "plan") { chatUpsertPlan(st.plan); if (Array.isArray(st.plan) && st.plan.length) chatShowTyping("执行计划中…"); return; }
   if (t === "plan_cleared") { chatPlanClear(); return; } // 主代理显式降级"无需多步流程"：收起旧流程卡
+  if (t === "workspace") { chatWorkspaceNote(st.entry); return; } // 研讨条目实时可见（原先事件被丢弃）
   if (t === "answer_delta") { chatAppendAns(st.text || ""); return; }
   if (t === "tool_start") {
     // 工具执行 → 独立卡片（默认折叠，标题行实时预览参数）

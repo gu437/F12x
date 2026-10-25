@@ -200,6 +200,10 @@
               <button id="int-run" class="ctrl-btn primary"><span data-icon="play" data-size="12"></span> 开始</button>
               <button id="int-stop" class="ctrl-btn hidden">停止</button>
             </div>
+            <div class="toolbar wrap"><textarea id="int-headers" class="code-input" rows="2" placeholder="请求头（key: value 每行一个；可留空，同源会自动带会话 Cookie）"></textarea></div>
+            <div class="toolbar wrap">
+              <input id="int-headerinject" class="text-input flex" placeholder="注入头（可选，形如 X-Test: {payload}）" />
+            </div>
             <div class="toolbar wrap"><textarea id="int-body" class="code-input" rows="2" placeholder="请求体（含 {payload} 时同时注入）"></textarea></div>
             <div class="int-summary" id="int-summary"></div>
             <div id="int-results" class="int-results"></div>
