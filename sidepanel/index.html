@@ -22,6 +22,7 @@
       <span class="spacer"></span>
       <span id="llm-badge" class="llm-badge hidden" title="AI 已配置">AI</span>
       <span id="status" class="status-dot" data-tip="调试器连接状态" title="调试器连接状态"></span>
+      <button id="issue-chip" class="icon-btn" title="Issue 工作台（漏洞 / 发现记录，可导出 Markdown / HTML）"><span data-icon="clipboard-list" data-size="15"></span><span id="issue-count"></span></button>
       <button id="settings-toggle" class="icon-btn" title="设置"><span data-icon="settings" data-size="15"></span></button>
     </header>
 
@@ -128,6 +129,7 @@
             <div id="net-table-wrap" class="net-table-wrap"></div>
             <div id="net-pager" class="net-pager"></div>
             <div id="net-detail" class="net-detail hidden">
+              <div class="resizer resizer-v" data-resize-v="#net-detail" data-min="120" data-max="0.8" title="拖动调整详情高度"></div>
               <div class="tabs" id="net-detail-tabs">
                 <button class="tab active" data-tab="reqh">请求头</button>
                 <button class="tab" data-tab="reqb">请求体</button>
@@ -256,6 +258,7 @@
           </div>
           <div id="script-layout">
             <div id="script-list" class="script-list"></div>
+            <div class="resizer resizer-h" data-resize-h="#script-list" data-min="120" data-max="0.6" title="拖动调整脚本列表宽度"></div>
             <div id="script-content" class="script-content">
               <div class="placeholder">选择左侧脚本查看源码（行号 + grep 高亮）</div>
             </div>

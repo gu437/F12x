@@ -290,6 +290,7 @@ body.resizing-h { cursor: ew-resize !important; user-select: none; }
 .cl.error b, .cl.exception b { color: #f56c6c; }
 
 /* ---------- 站点 ---------- */
+.site-sessions-hint { font-size:11px; color:var(--text-3); padding:2px 2px 6px; }
 .site-list { padding: 4px 8px; display: flex; flex-direction: column; gap: 4px; }
 .site-item {
   display: flex; align-items: center; gap: 6px; padding: 6px 8px;
@@ -1546,6 +1547,7 @@ body.resizing-h { cursor: ew-resize !important; user-select: none; }
 
 /* Issue 工作台 */
 #issue-count { background:var(--brand,#4176e6); color:#fff; border-radius:20px; padding:0 6px; font-size:10px; min-width:16px; text-align:center; }
+#issue-count:empty { display:none; } /* 无 Issue 时不显示空徽标 */
 .issue-form { margin:6px 0; display:flex; flex-direction:column; gap:6px; }
 .issue-row { display:flex; gap:6px; align-items:center; }
 .issue-list { max-height:240px; overflow-y:auto; margin:8px 0; display:flex; flex-direction:column; gap:4px; }

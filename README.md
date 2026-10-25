@@ -29,7 +29,7 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 | 请求 | **Repeater**：自定义方法 / URL / 头 / 体发送、与上次响应对比、→ Comparer / Decoder、历史（可"存到站点"）；**Intruder**：`{payload}` 占位注入 URL / 请求体（工具层另支持请求头注入，面板暂未提供头输入）、payload 文本或文件导入、并发 / 限速 / 停止、摘要与逐条结果；**Comparer**：A/B 文本对比、一键交换；**Decoder**：Base64 / URL / Hex 编解码，输出"→ 再编码"链式转换 |
 | Cookie | 域名 / 名称过滤、显示值开关、刷新；值默认掩码、点击切换完整值；可编辑 / 删除（CDP 写回，失败如实报错） |
 | 脚本 | 页面脚本列表、grep 关键字高亮（默认 20 处）、源码行号查看 |
-| 站点 | 手工维护的站点工作区：创建 / 重命名 / 删除、scope（域名列表）、**黑板**（该站点事实卡，可手填或"标记为发现"写入；Repeater 的「存到站点」也是写入一条 `repeater-history` 事实）、**模板**（新建后点「运行」直接下发一条 AI 任务，附执行说明）。「会话」页签目前是空占位 |
+| 站点 | 手工维护的站点工作区：创建 / 重命名 / 删除、scope（域名列表）、**黑板**（该站点事实卡，可手填或"标记为发现"写入；Repeater 的「存到站点」也是写入一条 `repeater-history` 事实）、**模板**（新建后点「运行」直接下发一条 AI 任务，附执行说明）、**会话**（按 scope 域名匹配提到该站点的 AI 会话，点条目直接打开） |
 | AI | 见下节 |
 
 ### 网络拦截（抓包改包）
@@ -120,6 +120,7 @@ AI 任务专用（不可手动直调）：`upsert_fact` `get_fact` `rebuttal_che
 | 导航 | 发出后 400ms 起轮询 `readyState`，总超时 15s（超时返回失败，不给假成功）；`javascript:` URL 直接拒绝 |
 | `eval_js` | `Runtime.evaluate` + `awaitPromise`，30s |
 | 响应体读取 | 默认 3000 字符起，支持 `offset/limit` 分段；`replay_request` 响应体封顶 500k 字符 |
+| Repeater 重放 | 同源：页面上下文 `fetch`（12s 超时，失败回退扩展 `fetch`）；跨域：扩展 `fetch`（15s 超时，无会话 Cookie） |
 | 页面骨架 | 约 10000 token 预算，超预算自动截断并提示改用 `search_dom`（深度按 12→6→3→2 自适应降级） |
 | 脚本源码 | `grep` 匹配上限默认 20 处（可调）；源码 >10MB 拒绝读取，>50 万字符且未指定区间 / grep 时自动截断 |
 | Intruder | 结果上限默认 500 条；响应体默认不返回（勾选后单条 ≤20000 字符）；`{payload}` 必须出现在 URL / body / headerInject 之一 |
@@ -159,9 +160,9 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 
 - 轨迹面板是 archify 引擎渲染的**静态 SVG + 自定义缩放 / 拖拽**：扩展 CSP 禁止内联查看器脚本，故不内嵌官方交互查看器；需要完整交互时用「打开完整工件」下载官方 HTML。`lifecycle` / `sequence` 渲染路径的代码保留但当前未接线。
 - Scope 的「AI 也受范围约束」开关仅持久化，AI 执行端尚未接线拦截（人工操作过滤 / 越界确认已生效）。
-- 站点模块的「会话」页签目前是空占位，未实现"与该站点相关的 AI 会话回看"。
+- 站点「会话」页签是**按 scope 域名做文本匹配**（标题 / 目标 / 消息正文，先廉价匹配再最多深读 30 个会话详情），不是精确的"站点↔会话"外键；站点没填 scope 时无法匹配。
 - 拦截仅请求阶段（放行 / 改头 / 伪造响应 / 丢弃），暂无响应阶段拦截。
-- **同源 Repeater** 走页面上下文 `fetch`（自动带会话 Cookie，含 httpOnly），因此受页面 `connect-src` CSP 约束；跨域重放走扩展 `fetch`（无会话 Cookie）。同源分支的 15s 超时目前未真正挂到 fetch 上（依赖浏览器网络栈自行结束）。
+- **同源 Repeater** 走页面上下文 `fetch`（自动带会话 Cookie，含 httpOnly），因此受页面 `connect-src` CSP 约束；12s 超时写在页面上下文内部，失败会自动回退扩展 `fetch`（无会话 Cookie）并在 `note` 里标注原因。
 - `get_cookies` 只读当前调试目标的 Cookie（`Network.getCookies`），不是第三方分区全量视角。
 - `get_skill` 只读取存储中已安装的技能内容，未安装时返回 NOT_FOUND，属预期。
 - `call_expert` 拒绝低价值复核是设计行为；「反过度思考」的 Plan 触发阈值待积累真实统计数据后再校准。
@@ -170,8 +171,8 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 - Ollama + Intel Arc（iGPU/Vulkan）在空闲后首个请求有数秒~数十秒唤醒延迟（本地保活默认开启缓解；仍明显则更新显卡驱动或改用 CPU/LM Studio）。
 - token 估算为字符启发式（CJK 偏保守），不是精确 tokenizer。
 - 网络列配置持久化（`networkColumns`）；分页页码等其余 UI 偏好为**会话内**状态、不持久化。
-- Issue 没有独立入口：`#issue-count` chip 在 HTML 中不存在，只能从网络详情「→ Issue」进入。
-- Intruder 面板的「停止」发的是全局 `ai:stop`，不能中断已经发出的爆破（工具层支持中断，面板尚未接线）；面板也未提供请求头输入（工具层 `headerInject` 可用）。
+- Issue 入口：顶栏剪贴板图标（有 Issue 时显示数量）+ 网络详情「→ Issue」。
+- Intruder「停止」已接线（`tool:intruder_stop` → `AbortController`，工具逐请求检查 signal 并返回 `interrupted`）；面板仍未提供请求头输入（工具层 `headerInject` 可用）。
 - Cookie 的「显示值」开关只决定是否向浏览器读取 value；列表始终按掩码渲染，点击单元格才显示完整值；同名 Cookie 只命中第一条，删除 / 编辑按 `https://域名` 拼 URL。
 
 ## 近期修复（0.2.1）
@@ -184,6 +185,19 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 - 页面浮条（执行 / 导航指示器）改 F12x 黑白样式 + 动作化可读摘要（`eval_js` 显示"操作目标 / 请求地址"而非整段代码）；导航"已到达"提示跟随目标页并延长展示。
 - 网络表渲染链路加防御与诊断（`[F12x] renderNetworkTable 异常：…` 可见可定位）。
 - 主题 skin 数值抄自 DeepSeek Harness / Open Props（灰阶 / 发丝边框 / 圆角 / 字体栈），图标改为透明底（RGBA）。
+
+## 本次修复（通读全量源码后）
+
+- **Intruder 停止真正生效**：新增 `tool:intruder_stop`，路由层持 `AbortController` 并下发给 `intruder`；面板「停止」不再误发 `ai:stop`，结果摘要显示「已中断（发出 N/M）」。
+- **站点「会话」页签落地**：`renderSiteSessions()` 按站点 scope 域名匹配会话标题 / 目标 / 消息正文（先廉价匹配，再最多深读 30 个详情），点条目直接打开会话。
+- **Issue 有了独立入口**：顶栏新增剪贴板按钮（无 Issue 时空徽标隐藏），与网络详情「→ Issue」并存。
+- **Repeater 同源重放超时真正生效**：15s 外置定时器改为页面上下文内的 12s `AbortController`（外层定时器管不到页面里的 fetch）；失败时**真的**回退扩展 fetch，并在 `note` 里写明失败原因（原注释声称回退、代码直接返回）。
+- **面板补齐两个被丢弃的事件**：`expert_tool_done`（专家每步 ✓/✗ 行）、`ai:compaction_done`（压缩落地回执：丢几轮 / 多少 token → 摘要多少 token）。
+- **返回契约补齐**：`eval_js` 成功带 `ok:true`、异常带 `ok:false` + `TOOL_EXECUTION_ERROR`；`navigate` 空 URL 分支补 `ok:false`。
+- **恢复分栏拖拽**：补回脚本列表（宽度）与网络详情（高度）的 `.resizer` 元素——`initResizers()` 与 `openNetworkDetail()` 早已引用它们，此前因元素缺失而全程空转。
+- 顺手修正：专家卡 `aria-expanded` 与"默认折叠"实现不一致（读屏会误报展开态）。
+
+验证：`node --check` 全部 19 个 JS 通过；上述行为需在 `chrome://extensions` 重载扩展后手动回归（Intruder 停止 / 站点会话页签 / 顶栏 Issue / 同源重放 / 专家步骤行 / 两处拖拽条）。
 
 ## 路线图
 

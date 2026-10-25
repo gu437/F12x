@@ -1255,7 +1255,11 @@ function initRequestModule() {
 
   // Intruder
   $("int-run").addEventListener("click", intruderRun);
-  $("int-stop").addEventListener("click", async () => { await api("ai:stop"); toast("已停止"); });
+  $("int-stop").addEventListener("click", async () => {
+    // 真正中断：路由层持有 AbortController，intruder 逐请求检查 signal 后提前返回
+    const r = await api("tool:intruder_stop");
+    toast(r.stopped ? "正在停止爆破…" : "当前没有进行中的爆破");
+  });
   $("int-payloads-file").addEventListener("click", () => $("int-file-input").click());
   $("int-file-input").addEventListener("change", (e) => {
     const f = e.target.files[0];
@@ -1368,7 +1372,8 @@ async function intruderRun() {
   $("int-run").classList.remove("hidden");
   $("int-stop").classList.add("hidden");
   if (!r.ok) { $("int-summary").textContent = "失败：" + r.error; return; }
-  $("int-summary").textContent = `完成 ${r.returned}/${r.total} · 状态分组：${JSON.stringify(r.statusGroups)} · 长度分组：${JSON.stringify(r.lenGroups)}`;
+  const head = r.interrupted ? `已中断（发出 ${r.returned}/${r.total}）` : `完成 ${r.returned}/${r.total}`;
+  $("int-summary").textContent = `${head} · 状态分组：${JSON.stringify(r.statusGroups)} · 长度分组：${JSON.stringify(r.lenGroups)}`;
   const rows = r.results.map(x => {
     const anomaly = x.status === 500 || x.error ? " anomaly" : "";
     return `<tr class="${anomaly}"><td>${x.index}</td><td>${esc(x.payload)}</td><td>${x.status ?? "ERR"}</td><td>${x.length}</td><td>${esc(x.error || (x.body ? x.body.substring(0, 60) : ""))}</td></tr>`;
@@ -1858,7 +1863,7 @@ function chatExpertStart(name, tool) {
     row.className = "dshReasonRow";
     row.setAttribute("role", "button");
     row.tabIndex = 0;
-    row.setAttribute("aria-expanded", "true");
+    row.setAttribute("aria-expanded", "false"); // 与"默认折叠"实现保持一致（原写 true，读屏会误报展开态）
     const lead = document.createElement("span");
     lead.className = "dshReasonLead";
     lead.innerHTML = dshSvg("bot", "dshReasonIconIdle") + dshSvg("chevron-down", "dshReasonChevHover");
@@ -1923,6 +1928,14 @@ function chatExpertStepMark(step, tool, args) {
   if (!chatUI.expertBlock) chatExpertStart(chatUI.expertName || "专家");
   const mark = "\n→ 第 " + String(step || "?") + " 步：" + String(tool || "") + (args ? "（" + String(args).substring(0, 90) + "）" : "");
   chatUI.expertBuf = (String(chatUI.expertBuf || "").trim() ? String(chatUI.expertBuf).trim() + mark : mark);
+  chatExpertRefresh();
+  chatScrollSoft();
+}
+// 专家回合每步查证结果（expert_tool_done）：在块内补一行 ✓/✗，避免"调了什么、成不成功"只有思考没结论
+function chatExpertStepDone(step, tool, ok) {
+  if (!chatUI.expertBlock) return;
+  const mark = "\n" + (ok ? "  ✓ 第 " + String(step || "?") + " 步 " + String(tool || "") + " 完成" : "  ✗ 第 " + String(step || "?") + " 步 " + String(tool || "") + " 失败");
+  chatUI.expertBuf = String(chatUI.expertBuf || "") + mark;
   chatExpertRefresh();
   chatScrollSoft();
 }
@@ -2802,6 +2815,7 @@ function chatOnStatus(st) {
   }
   if (t === "expert_start") { chatExpertStart(String(st.expert || ""), String(st.tool || "")); return; }
   if (t === "expert_step") { chatExpertStepMark(st.step, st.tool, st.args); return; } // E1：专家回合步骤实时呈现
+  if (t === "expert_tool_done") { chatExpertStepDone(st.step, st.tool, st.ok); return; } // 每步查证结果（原无分支被静默丢弃）
   if (t === "expert_reasoning") { chatExpertAppend(String(st.delta || "")); return; } // 修复：专家思考实时可见（原事件无分支被丢弃）
   if (t === "expert_done") {
     chatExpertSeal(st); // 结论/verified/轨迹已并入专家卡正文（不再输出重复小字行）
@@ -2811,6 +2825,16 @@ function chatOnStatus(st) {
   if (t === "review_reply") { chatReviewReply(st.text || ""); return; } // 主代理回应并入同一张审查卡
   if (t === "ai:approval_requested") { wdHide(); chatFlowLine("warn", "⏸ 等待批准：<b>" + escapeHtml(String((st.approval && (st.approval.tool || st.approval.toolName)) || "AI 操作")) + "</b> — 在批准弹层中处理"); return; }
   if (t === "ai:compaction") { chatFlowLine("", "🧩 上下文压缩中（" + (st.trigger === "overflow" ? "溢出触发" : "预算压力 @ " + (st.at || "") + " tokens") + "）"); return; }
+  if (t === "ai:compaction_done") {
+    // 压缩落地回执（原无分支被静默丢弃）：丢多少轮 / 多少 token → 摘要多少 token
+    const bits = [];
+    if (st.droppedRounds) bits.push("丢 " + st.droppedRounds + " 轮");
+    if (st.droppedTokens) bits.push(st.droppedTokens + "t");
+    if (st.summaryTokens) bits.push("摘要 " + st.summaryTokens + "t");
+    const kept = st.compactionId ? "（" + escapeHtml(String(st.compactionId)) + "）" : "";
+    chatFlowLine("ok", "🗜 上下文已压缩" + (bits.length ? "：" + bits.join(" → ") : "") + kept);
+    return;
+  }
   if (t === "ai:tool_timeout") { chatFlowLine("warn", "⏱ 工具 " + escapeHtml(String(st.tool || "")) + " 超时"); return; }
   if (t === "ai:repeat_tool_notice") { chatFlowLine("warn", "⚠ 已连续 " + (st.count || 3) + " 次重复调用 " + escapeHtml(String(st.tool || "")) + "（已提醒模型）"); return; }
   if (t === "shot_captured") {
@@ -2893,6 +2917,7 @@ async function loadActiveSiteDetail(id) {
   $("site-detail").classList.remove("hidden");
   renderSiteFacts();
   renderSiteTemplates();
+  renderSiteSessions().catch(() => {});
   $("site-selector").value = id;
 }
 
@@ -2987,6 +3012,68 @@ function renderSiteTemplates() {
       await loadActiveSiteDetail(app.activeSite.id);
     });
   });
+}
+
+// 站点「会话」页签：按 scope 域名匹配相关 AI 会话。
+// ① 先用列表自带的标题/目标做廉价匹配；② 未命中的再读详情里的消息正文（最多 40 个，避免全量拉取）。
+async function renderSiteSessions() {
+  const pane = $("site-sessions");
+  const site = app.activeSite;
+  if (!pane) return;
+  if (!site) { pane.innerHTML = '<div class="placeholder">未选择站点</div>'; return; }
+  const hosts = (site.scope || []).map(s => {
+    const v = String(s || "").trim().replace(/^https?:\/\//i, "");
+    return v.split("/")[0].split(":")[0].toLowerCase();
+  }).filter(Boolean);
+  if (!hosts.length) {
+    pane.innerHTML = '<div class="placeholder">该站点未设置 scope 域名——在站点「重命名」里补上域名后，才能匹配相关会话</div>';
+    return;
+  }
+  pane.innerHTML = '<div class="placeholder">正在匹配相关会话…</div>';
+  const lr = await api("ai:conversations");
+  if (!lr.ok) { pane.innerHTML = `<div class="placeholder">会话列表读取失败：${esc(lr.error)}</div>`; return; }
+  const convs = (lr.conversations || []).slice(0, 120);
+  const hits = [];
+  const seen = new Set();
+  const matchOf = (text) => { const low = String(text || "").toLowerCase(); return hosts.find(h => low.includes(h)) || ""; };
+  for (const c of convs) {
+    const hit = matchOf((c.title || "") + "\n" + (c.goal || ""));
+    if (hit) { hits.push({ c, host: hit }); seen.add(c.convId); }
+  }
+  let deep = 0;
+  for (const c of convs) {
+    if (seen.has(c.convId)) continue;
+    if (deep >= 30) break;
+    if (!app.activeSite || app.activeSite.id !== site.id) return; // 站点已切换：放弃本次匹配
+    deep++;
+    try {
+      const d = await api("ai:conversation_detail", { convId: c.convId });
+      if (!d.ok || !d.conversation) continue;
+      const hit = matchOf((d.conversation.messages || []).map(m => String(m.content || "")).join("\n"));
+      if (hit) hits.push({ c, host: hit });
+    } catch (e) { /* 单个会话读取失败不影响列表 */ }
+  }
+  if (!hits.length) {
+    pane.innerHTML = `<div class="placeholder">没有会话提到该站点域名（${esc(hosts.join(" / "))}）——跑一次针对该站点的 AI 任务后会自动出现在这里</div>`;
+    return;
+  }
+  hits.sort((a, b) => (b.c.updatedAt || 0) - (a.c.updatedAt || 0));
+  pane.innerHTML = `<div class="site-sessions-hint">按 scope 域名匹配（${esc(hosts.join(" / "))}）：命中 ${hits.length} 个会话</div>`
+    + hits.map(({ c, host }) => `
+      <div class="conv-item" data-id="${esc(c.convId)}">
+        <div class="ci-head">
+          <span class="ci-title">${esc(c.title || "未命名会话")}</span>
+          <span class="ci-type ${c.type === "task" ? "task" : ""}">${c.type === "task" ? "任务" : "聊天"}</span>
+          <span class="ci-time">${new Date(c.updatedAt || 0).toLocaleString()}</span>
+        </div>
+        <div class="ci-meta">命中 ${esc(host)} · 消息 ${c.msgCount || 0} · 审计 ${(c.audit || []).length}</div>
+      </div>`).join("");
+  pane.querySelectorAll(".conv-item").forEach(el => el.addEventListener("click", () => {
+    const hit = hits.find(x => String(x.c.convId) === el.dataset.id);
+    if (!hit) return;
+    switchView("ai");
+    openAIDetail(hit.c); // 列表项字段足够（convId / title / type / projectId / msgCount / updatedAt）
+  }));
 }
 
 // ============================================================
