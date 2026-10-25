@@ -602,25 +602,23 @@ export function handleMessage(message, sender, sendResponse) {
     return true;
   }
   if (type === "ai:conversations") {
-    // AI 会话列表（任务/聊天，含审计回看）
+    // AI 会话列表：只读索引（元数据），不再逐会话读取全文（原 O(N²)）
     (async () => {
       try {
         const convs = await listConversations();
-        const detailed = [];
-        for (const c of convs) {
-          const full = await getConversation(c.convId);
-          if (!full) continue;
-          detailed.push({
-            convId: full.convId, title: full.title,
-            type: full.type === "task" ? "task" : "chat",
-            projectId: full.projectId || null,
-            modelId: full.modelId || null,
-            createdAt: full.createdAt, updatedAt: full.updatedAt,
-            goal: full.goal || "", msgCount: (full.messages || []).length,
-            audit: Array.isArray(full.audit) ? full.audit.slice(-50) : []
-          });
-        }
-        sendResponse({ ok: true, conversations: detailed });
+        sendResponse({
+          ok: true,
+          conversations: convs.map((m) => ({
+            convId: m.convId, title: m.title,
+            type: m.type === "task" ? "task" : "chat",
+            projectId: m.projectId || null,
+            modelId: m.modelId || null,
+            createdAt: m.createdAt, updatedAt: m.updatedAt,
+            goal: m.goal || "", msgCount: m.msgCount || 0,
+            auditCount: m.auditCount || 0,
+            audit: [], // 兼容旧前端字段；列表不再携带审计数组
+          })),
+        });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;

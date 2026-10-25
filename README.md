@@ -107,10 +107,10 @@ AI 任务专用（不可手动直调）：`upsert_fact` `get_fact` `rebuttal_che
 | --- | --- |
 | LLM | `llmConfig`（引擎唯一读取点）、`llm_endpoints`、`f12x_models_v1`（模型条目）、`f12x_model_active`（默认模型 id）；旧版独立键 `llm_api_key` / `llm_base_url` / `llm_model` 仍兼容 |
 | 行为 | `approvalLevel`（`read_auto_write_approve` 默认 / `full_auto` / `all_approve`）、`f12x_thinking_limit`（思考字符上限，0=不限）、`f12x_context_window`（压缩窗口）、`f12x_guard_profile`（auto / lite / full）、`f12x_local_warm`（本地空闲保活）、`f12x_ai_mode`·`f12x_ai_nothink`（localStorage，会话 UI 记忆） |
-| 数据 | `projects_v2`、`conversations_v2`、`active_conv_v2`、`sites_v1`、`active_site_v1`、`skills_data`、`f12x_scope_v1`、`f12x_issues_v1`、`f12x_repeater_history_v1`、`f12x_pending_approval_v1`、`f12x_intercept_snapshot_v1` |
-| 会话级 | `workspace:{convId}`、`spill:{convId}:{key}`、`shot_*`（截图） |
+| 数据 | `projects_v2`、`conversations_index_v2`（会话元数据索引）、`conv:<convId>`（单会话全文）、`active_conv_v2`、`sites_v1`、`active_site_v1`、`skills_data`、`f12x_scope_v1`、`f12x_issues_v1`、`f12x_repeater_history_v1`、`f12x_pending_approval_v1`、`f12x_intercept_snapshot_v1`、`shots_index_v1`（截图索引） |
+| 会话级 | `workspace:{convId}`、`spill:{convId}:{key}` + `spill_index:{convId}`、`shot_*`（截图） |
 
-淘汰与上限：会话 100 个（保留活跃会话）、单会话消息 400 条、`events` 500 条、黑板事实 500 条 / 项目、工作区条目 2000 条、审计 200 条、网络 2000 条、控制台 200 条、截图 5 张、溢出区 30 条 / 会话。
+淘汰与上限：会话 100 个（保留活跃会话）、单会话消息 400 条、`events` 500 条、黑板事实 500 条 / 项目、工作区条目 2000 条、审计 200 条、网络 2000 条、控制台 200 条、截图 5 张、溢出区 30 条 / 会话。旧版全量数组 `conversations_v2` 会在扩展启动时**自动迁移**为「索引 + 每会话一键」。
 
 ## 运行限制与容量
 

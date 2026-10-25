@@ -3105,7 +3105,7 @@ async function renderSiteSessions() {
           <span class="ci-type ${c.type === "task" ? "task" : ""}">${c.type === "task" ? "任务" : "聊天"}</span>
           <span class="ci-time">${new Date(c.updatedAt || 0).toLocaleString()}</span>
         </div>
-        <div class="ci-meta">命中 ${esc(host)} · 消息 ${c.msgCount || 0} · 审计 ${(c.audit || []).length}</div>
+        <div class="ci-meta">命中 ${esc(host)} · 消息 ${c.msgCount || 0} · 审计 ${c.auditCount ?? (c.audit || []).length}</div>
       </div>`).join("");
   pane.querySelectorAll(".conv-item").forEach(el => el.addEventListener("click", () => {
     const hit = hits.find(x => String(x.c.convId) === el.dataset.id);
@@ -3486,7 +3486,7 @@ async function renderAISessions() {
           <button class="mini-btn danger" data-act="del" title="删除会话（含其沉淀的黑板发现）">删除</button>
         </span>
       </div>
-      <div class="ci-meta">消息 ${c.msgCount} · 审计 ${(c.audit || []).length}</div>
+      <div class="ci-meta">消息 ${c.msgCount} · 审计 ${c.auditCount ?? (c.audit || []).length}</div>
     </div>`;
   let html = "";
   for (const g of bound) {

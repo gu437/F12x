@@ -13,7 +13,7 @@ import {
 import { normalizeEndpoint } from "./llm.js";
 import {
   upsertFact, getFact, publishToBlackboard, appendWorkspaceEntry, updateWorkspaceEntry, getWorkspace,
-  getRoleSkills, saveConversation, AI_PROJECT_ID
+  getRoleSkills, saveConversation, AI_PROJECT_ID, spillKey, recordSpillKey
 } from "./memory.js";
 import { normalizeError, normalizeToolResult, F12X_ERROR_CODES } from "./errors.js";
 import { runReviewAudit, TOOL_NAMES_CN } from "./experts.js";
@@ -116,16 +116,11 @@ async function maybeSpill(raw, toolName = "") {
   if (!text || text.length <= SPILL_THRESHOLD) return raw;
   const convId = taskState.conv?.convId || "global";
   const key = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-  const storageKey = `spill:${convId}:${key}`;
+  const storageKey = spillKey(convId, key);
   try {
     await chrome.storage.local.set({ [storageKey]: { at: Date.now(), content: text, summary: text.substring(0, SPILL_SUMMARY_LEN) } });
-    // 上限裁剪：保留最近 SPILL_LIMIT_PER_CONV 条
-    const all = await chrome.storage.local.get(null);
-    const keys = Object.keys(all).filter(k => k.startsWith(`spill:${convId}:`)).sort((a, b) => (all[a].at || 0) - (all[b].at || 0));
-    if (keys.length > SPILL_LIMIT_PER_CONV) {
-      const drop = keys.slice(0, keys.length - SPILL_LIMIT_PER_CONV);
-      await chrome.storage.local.remove(drop);
-    }
+    // 按每会话 spill 索引精确裁剪最旧（不再 get(null) 全库扫描）
+    await recordSpillKey(convId, key, SPILL_LIMIT_PER_CONV);
   } catch (e) {
     return raw; // 写入失败 → 降级保留原文
   }

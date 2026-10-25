@@ -198,45 +198,132 @@ export async function removeAIFinding(key, projectId) {
 }
 
 // === 会话（独立对话，可关联项目） ===
+// 存储布局（性能修复）：索引 + 每会话一键。
+//   旧：conversations_v2 = 全量数组 —— 每次保存重写所有会话（agent 每 700ms flush 一次），
+//       列表接口还要逐会话再读一遍全数组（O(N²)），会话一多就卡。
+//   新：conversations_index_v2 = 轻量元数据（KB 级）；conv:<id> = 单个会话全文。
+//       保存只写"一个会话 + 小索引"，读取列表只读索引，与历史会话数无关。
+const CONV_INDEX_KEY = "conversations_index_v2";
+const CONV_KEY_PREFIX = "conv:";
+const CONV_MAX = 100;
+const convKey = (convId) => CONV_KEY_PREFIX + convId;
+
+function convMeta(c) {
+  return {
+    convId: c.convId,
+    title: c.title || "新对话",
+    projectId: c.projectId || null,
+    modelId: c.modelId || null,
+    type: c.type === "task" ? "task" : "chat",
+    createdAt: c.createdAt || Date.now(),
+    updatedAt: c.updatedAt || Date.now(),
+    goal: String(c.goal || "").substring(0, 200),
+    msgCount: Array.isArray(c.messages) ? c.messages.length : 0,
+    auditCount: Array.isArray(c.audit) ? c.audit.length : 0,
+    eventsCount: Array.isArray(c.events) ? c.events.length : 0
+  };
+}
+
+async function readConvIndex() {
+  const r = await chrome.storage.local.get(CONV_INDEX_KEY);
+  return Array.isArray(r[CONV_INDEX_KEY]) ? r[CONV_INDEX_KEY] : [];
+}
+
+// 写索引：保持"新→旧"，超上限时优先淘汰非活跃会话（连会话正文一起删，避免泄漏）
+async function writeConvIndex(index) {
+  const r = await chrome.storage.local.get(ACTIVE_KEY);
+  const activeId = r[ACTIVE_KEY];
+  let list = index.slice().sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+  const dropped = [];
+  while (list.length > CONV_MAX) {
+    const victim = list.find((m) => m.convId !== activeId) || list[0];
+    list = list.filter((m) => m.convId !== victim.convId);
+    dropped.push(victim.convId);
+  }
+  list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  await chrome.storage.local.set({ [CONV_INDEX_KEY]: list });
+  if (dropped.length) await chrome.storage.local.remove(dropped.map(convKey));
+  return list;
+}
+
+// 旧数据迁移：conversations_v2（全量数组）→ 索引 + 每会话一键；幂等，可重复调用
+export async function migrateConversationsIfNeeded() {
+  const r = await chrome.storage.local.get([CONVERSATIONS_KEY, CONV_INDEX_KEY]);
+  const legacy = r[CONVERSATIONS_KEY];
+  if (!Array.isArray(legacy) || !legacy.length) {
+    if (r[CONVERSATIONS_KEY] !== undefined) await chrome.storage.local.remove(CONVERSATIONS_KEY);
+    return { migrated: 0 };
+  }
+  if (Array.isArray(r[CONV_INDEX_KEY]) && r[CONV_INDEX_KEY].length) {
+    await chrome.storage.local.remove(CONVERSATIONS_KEY); // 已有新布局：旧数组丢弃，避免双份
+    return { migrated: 0 };
+  }
+  const index = [];
+  const items = [];
+  for (const c of legacy) {
+    if (!c?.convId) continue;
+    items.push([convKey(c.convId), c]);
+    index.push(convMeta(c));
+  }
+  for (let i = 0; i < items.length; i += 10) {
+    await chrome.storage.local.set(Object.fromEntries(items.slice(i, i + 10)));
+  }
+  if (index.length) await chrome.storage.local.set({ [CONV_INDEX_KEY]: index });
+  await chrome.storage.local.remove(CONVERSATIONS_KEY);
+  return { migrated: index.length };
+}
+
+// 列表：只读索引（不再逐会话读全量）
 export async function listConversations() {
-  const r = await chrome.storage.local.get([CONVERSATIONS_KEY, PROJECTS_KEY]);
-  const conversations = r[CONVERSATIONS_KEY] || [];
-  const projects = r[PROJECTS_KEY] || {};
-  return conversations.map(c => ({
-    convId: c.convId, title: c.title, projectId: c.projectId || null,
-    projectName: c.projectId ? (projects[c.projectId]?.name || "已删除项目") : null,
-    createdAt: c.createdAt, updatedAt: c.updatedAt
-  })).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const [idxR, projR] = await Promise.all([
+    chrome.storage.local.get(CONV_INDEX_KEY),
+    chrome.storage.local.get(PROJECTS_KEY),
+  ]);
+  const index = Array.isArray(idxR[CONV_INDEX_KEY]) ? idxR[CONV_INDEX_KEY] : [];
+  const projects = projR[PROJECTS_KEY] || {};
+  return index
+    .map((m) => ({ ...m, projectName: m.projectId ? (projects[m.projectId]?.name || "已删除项目") : null }))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
 export async function getConversation(convId) {
   if (!convId) return null;
-  const r = await chrome.storage.local.get(CONVERSATIONS_KEY);
-  const conversations = r[CONVERSATIONS_KEY] || [];
-  return conversations.find(c => c.convId === convId) || null;
+  const r = await chrome.storage.local.get(convKey(convId));
+  const conv = r[convKey(convId)] || null;
+  if (conv) return conv;
+  // 懒迁移兜底：老库未迁移时按需迁移一次再取
+  try {
+    const m = await migrateConversationsIfNeeded();
+    if (m.migrated) {
+      const r2 = await chrome.storage.local.get(convKey(convId));
+      return r2[convKey(convId)] || null;
+    }
+  } catch (e) { /* 迁移失败按不存在处理 */ }
+  return null;
 }
 
-export async function saveConversation(conv) {
-  if (!conv?.convId) return;
-  const r = await chrome.storage.local.get([CONVERSATIONS_KEY, ACTIVE_KEY]);
-  let conversations = r[CONVERSATIONS_KEY] || [];
-  const idx = conversations.findIndex(c => c.convId === conv.convId);
+// 写串行化：flush 与 finalize 可能并发保存不同会话——索引是读-改-写，必须串行避免丢条目
+let _convChain = Promise.resolve();
+function serialConv(fn) {
+  const next = _convChain.then(fn, fn);
+  _convChain = next.catch(() => {});
+  return next;
+}
+
+// 保存：只写当前会话 + 小索引（与历史会话数无关）
+export function saveConversation(conv) {
+  if (!conv?.convId) return Promise.resolve();
+  return serialConv(() => saveConversationInner(conv));
+}
+
+async function saveConversationInner(conv) {
   conv.updatedAt = Date.now();
-  if (idx >= 0) conversations[idx] = conv; else conversations.push(conv);
-  if (conversations.length > 100) {
-    // 第二轮审查 P2-10：slice(-100) 可能删掉 ACTIVE_KEY 指向的会话——
-    // 淘汰时保留活跃会话（活跃会话被删会导致 getActiveConversation 查到旧键无引用）
-    // 修复#1：setActiveConversation 存的是纯字符串 convId（原按 ?.convId 对象读取恒为 undefined → 保护永不生效）
-    const activeId = r[ACTIVE_KEY];
-    if (activeId && !conversations.slice(-100).some(c => c.convId === activeId)) {
-      const active = conversations.find(c => c.convId === activeId);
-      const rest = conversations.filter(c => c.convId !== activeId).slice(-99);
-      conversations = active ? [...rest, active] : conversations.slice(-100);
-    } else {
-      conversations = conversations.slice(-100);
-    }
-  }
-  await chrome.storage.local.set({ [CONVERSATIONS_KEY]: conversations });
+  const index = await readConvIndex();
+  const meta = convMeta(conv);
+  const i = index.findIndex((m) => m.convId === conv.convId);
+  if (i >= 0) index[i] = meta; else index.unshift(meta);
+  await chrome.storage.local.set({ [convKey(conv.convId)]: conv });
+  await writeConvIndex(index);
 }
 
 export async function createConversation(projectId, title) {
@@ -253,26 +340,27 @@ export async function createConversation(projectId, title) {
   return conv;
 }
 
-export async function deleteConversation(convId) {
-  const r = await chrome.storage.local.get([CONVERSATIONS_KEY, ACTIVE_KEY]);
-  let conversations = r[CONVERSATIONS_KEY] || [];
-  conversations = conversations.filter(c => c.convId !== convId);
-  await chrome.storage.local.set({ [CONVERSATIONS_KEY]: conversations });
+export function deleteConversation(convId) {
+  return serialConv(() => deleteConversationInner(convId));
+}
+
+async function deleteConversationInner(convId) {
+  const r = await chrome.storage.local.get([CONV_INDEX_KEY, ACTIVE_KEY]);
+  const index = (Array.isArray(r[CONV_INDEX_KEY]) ? r[CONV_INDEX_KEY] : []).filter((m) => m.convId !== convId);
+  await chrome.storage.local.set({ [CONV_INDEX_KEY]: index });
   if (r[ACTIVE_KEY] === convId) await chrome.storage.local.remove(ACTIVE_KEY);
-  // 修复：级联清理该会话的溢出区(spill:{id}:*) 与工作区(workspace:{id}) 独立键——
-  // 原实现漏清理 → storage 永久泄漏（尤其 spill 大内容键）
-  try {
-    const all = await chrome.storage.local.get(null);
-    const drop = Object.keys(all).filter(k => k.startsWith(`spill:${convId}:`) || k === `workspace:${convId}`);
-    if (drop.length) await chrome.storage.local.remove(drop);
-  } catch (e) { /* 清理失败不阻断删除 */ }
+  // 级联清理：会话正文 + 溢出区（按 spill 索引，不再全库 get(null)）+ 工作区
+  const spillKeys = await listSpillKeys(convId);
+  const drop = [convKey(convId), spillIndexKey(convId), `workspace:${convId}`]
+    .concat(spillKeys.map((k) => spillKey(convId, k)));
+  await chrome.storage.local.remove(drop);
 }
 
 export async function getActiveConversation() {
-  const r = await chrome.storage.local.get([ACTIVE_KEY, CONVERSATIONS_KEY]);
+  const r = await chrome.storage.local.get(ACTIVE_KEY);
   const convId = r[ACTIVE_KEY];
   if (convId) {
-    const conv = (r[CONVERSATIONS_KEY] || []).find(c => c.convId === convId);
+    const conv = await getConversation(convId);
     if (conv) return conv;
   }
   return await createConversation(null, "新对话"); // 无活跃会话：自动创建独立会话
@@ -280,6 +368,25 @@ export async function getActiveConversation() {
 
 export async function setActiveConversation(convId) {
   await chrome.storage.local.set({ [ACTIVE_KEY]: convId });
+}
+
+// === 溢出区（spill）索引：替代原来的 get(null) 全库扫描 ===
+export const spillKey = (convId, key) => `spill:${convId}:${key}`;
+const spillIndexKey = (convId) => `spill_index:${convId}`;
+
+export async function listSpillKeys(convId) {
+  const r = await chrome.storage.local.get(spillIndexKey(convId));
+  return Array.isArray(r[spillIndexKey(convId)]) ? r[spillIndexKey(convId)] : [];
+}
+
+// 记录一条溢出数据；超出上限时按索引精确删除最旧的（不再 get(null) 全库）
+export async function recordSpillKey(convId, key, limit = 30) {
+  const cur = await listSpillKeys(convId);
+  const next = cur.filter((k) => k !== key).concat(key);
+  const removed = next.length > limit ? next.splice(0, next.length - limit) : [];
+  await chrome.storage.local.set({ [spillIndexKey(convId)]: next });
+  if (removed.length) await chrome.storage.local.remove(removed.map((k) => spillKey(convId, k)));
+  return { kept: next, removed };
 }
 
 // === P3：checkpoint 自包含快照（方案 §8.2 fork/resume / §10 数据模型） ===
