@@ -6,7 +6,7 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 **核心理念：用户是最高驱动者。** 全部手动功能不依赖 AI、不依赖网络与后端；AI 只是辅助工作台。任何 AI 产出都应落到可核对、可留痕的本地记录（黑板 / 审计 / 轨迹 / Issue）里，由人最终裁决。
 
 - 无自有后端、无遥测；LLM API Key 只保存在 `chrome.storage.local`，代码内无硬编码密钥。
-- 所有记录（Scope、Issue、Repeater 历史、待批准、黑板事实、会话审计与轨迹）同样只存本地。
+- 所有记录（Issue、Repeater 历史、待批准、黑板事实、会话审计与轨迹）同样只存本地。
 - 仓库在 `D:\dsh会话\F12x\F12x`（git 管理）；工作区级工程约定见上级目录 `AGENTS.md`；**每次改动的历史（改了什么 / 为什么 / 怎么验 / 提交）见 [`CHANGELOG.md`](CHANGELOG.md)**。
 - **完整使用手册（逐控件说明 + 19 张界面截图）见 [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md)**。
 
@@ -26,7 +26,7 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 | 视图 | 内容 |
 | --- | --- |
 | 页面 | Inspect 点选生成选择器卡、采集页面骨架（超预算自动截断）、表单枚举、视口 / 整页截图、URL 导航、CSS 选择器搜索 DOM、JS 执行台（支持顶层 await + 历史） |
-| 网络 | 实时请求表（缓冲 2000 条）、过滤（URL 正则、元数据搜索、方法 / 状态 / 域 / 类型）、列配置（持久化）、分页（50/页）、请求详情（请求头 / 请求体 / 响应头 / 响应体 / 控制台——控制台页签展示**全局最近 60 条**日志，不按请求过滤）、Scope 条（仅显示范围内） |
+| 网络 | 实时请求表（缓冲 2000 条）、过滤（URL 正则、元数据搜索、方法 / 状态 / 域 / 类型）、列配置（持久化）、分页（50/页）、请求详情（请求头 / 请求体 / 响应头 / 响应体 / 控制台——控制台页签展示**全局最近 60 条**日志，不按请求过滤） |
 | 请求 | **Repeater**：自定义方法 / URL / 头 / 体发送、与上次响应对比、→ Comparer / Decoder、历史（可"存到站点"）；**Intruder**：`{payload}` 占位注入 URL / 请求体 / 请求头（注入头字段）、自定义静态请求头、payload 文本或文件导入、并发 / 限速 / 停止（真中断）、摘要与逐条结果；**Comparer**：A/B 文本对比、一键交换；**Decoder**：Base64 / URL / Hex 编解码，输出"→ 再编码"链式转换 |
 | Cookie | 域名 / 名称过滤、显示值开关、刷新；值默认掩码、点击切换完整值；可编辑 / 删除（CDP 写回，失败如实报错） |
 | 脚本 | 页面脚本列表、grep 关键字高亮（默认 20 处）、源码行号查看 |
@@ -48,7 +48,6 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 
 ## 工作区与记录（人工数据，均可增删改查）
 
-- **Scope（目标范围）**：存储键 `f12x_scope_v1`。手动添加当前页面 / 选中请求 / 自定义规则，chip 显示数量；网络行按 范围内 / 范围外 高亮，可勾选"仅显示范围内"；越界手动请求（navigate / replay / intruder）会弹确认。另有一个"AI 也受范围约束"开关（已持久化，AI 执行端拦截尚未接线，见「已知边界」）。
 - **Issue（问题单工作台）**：存储键 `f12x_issues_v1`。入口是请求行的「→ Issue」；字段含 标题 / 严重度 / 状态 / 请求方法（选填）/ URL（自动增高文本域）/ 描述 / 复现证据；标题不会自动填 URL；可导出 **Markdown / HTML** 报告。
 - **AI 黑板**：AI 会话的事实沉淀（`upsert_fact` 等写入，高价值发现自动沉淀）。会话绑定项目后显示该**项目黑板**（跨会话共享），未绑定则显示 AI 全局黑板（`__ai__`）。
 - **会话工作区**：`workspace:{convId}`，记录研讨条目（发现 open/confirmed/overruled、疑问 open/resolved、决策 executing/done）；带证据的发现会自动沉淀黑板；**任务结束即清理**，过程不长期保存。
@@ -109,7 +108,7 @@ AI 任务专用（不可手动直调）：`upsert_fact` `get_fact` `rebuttal_che
 | --- | --- |
 | LLM | `llmConfig`（引擎唯一读取点）、`llm_endpoints`、`f12x_models_v1`（模型条目）、`f12x_model_active`（默认模型 id）；旧版独立键 `llm_api_key` / `llm_base_url` / `llm_model` 仍兼容 |
 | 行为 | `approvalLevel`（`read_auto_write_approve` 默认 / `full_auto` / `all_approve`）、`f12x_thinking_limit`（思考字符上限，0=不限）、`f12x_context_window`（压缩窗口）、`f12x_guard_profile`（auto / lite / full）、`f12x_local_warm`（本地空闲保活）、`f12x_ai_mode`·`f12x_ai_nothink`（localStorage，会话 UI 记忆） |
-| 数据 | `projects_v2`、`conversations_index_v2`（会话元数据索引）、`conv:<convId>`（单会话全文）、`active_conv_v2`、`sites_v1`、`active_site_v1`、`skills_data`、`f12x_scope_v1`、`f12x_issues_v1`、`f12x_repeater_history_v1`、`f12x_pending_approval_v1`、`f12x_intercept_snapshot_v1`、`shots_index_v1`（截图索引） |
+| 数据 | `projects_v2`、`conversations_index_v2`（会话元数据索引）、`conv:<convId>`（单会话全文）、`active_conv_v2`、`sites_v1`、`active_site_v1`、`skills_data`、`f12x_issues_v1`、`f12x_repeater_history_v1`、`f12x_pending_approval_v1`、`f12x_intercept_snapshot_v1`、`shots_index_v1`（截图索引） |
 | 会话级 | `workspace:{convId}`、`spill:{convId}:{key}` + `spill_index:{convId}`、`shot_*`（截图） |
 
 淘汰与上限：会话 100 个（保留活跃会话）、单会话消息 400 条、`events` 500 条、黑板事实 500 条 / 项目、工作区条目 2000 条、审计 200 条、网络 2000 条、控制台 200 条、截图 5 张、溢出区 30 条 / 会话。旧版全量数组 `conversations_v2` 会在扩展启动时**自动迁移**为「索引 + 每会话一键」。
@@ -154,7 +153,7 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 
 - `manifest.json` `background.js` — MV3 声明与 Service Worker（port 注册、bus→panel 桥、消息路由、20s 保活、启动清理）
 - `src/` — 核心模块（见上表）
-- `sidepanel/` — 工具台 UI：`index.html` + `panel.js`（视图 / 会话 / 渲染逻辑，经典脚本非 module）+ `styles.css` `components.css`（DSH 风格聊天排版、轨迹轨道、Scope；视图切换含 View Transition，偏好减弱动效时自动关闭）+ `icons.js`（内联 SVG）
+- `sidepanel/` — 工具台 UI：`index.html` + `panel.js`（视图 / 会话 / 渲染逻辑，经典脚本非 module）+ `styles.css` `components.css`（DSH 风格聊天排版、轨迹轨道；视图切换含 View Transition，偏好减弱动效时自动关闭）+ `icons.js`（内联 SVG）
 - `vendor/open-props` `vendor/open-props-theme.css` — 设计令牌
 - `vendor/archify/` — archify 引擎的浏览器适配（`renderers/` + `seam/` + `assets/`）：workflow / sequence / lifecycle 渲染器改为浏览器可运行；当前轨迹面板接入的是 **workflow** 引擎
 - `CHANGELOG.md` — 改动台账：每次实质改动一条（改了什么 / 为什么 / 验证 / 提交 hash），新条目置顶
@@ -164,7 +163,6 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 ## 已知边界（如实说明）
 
 - 轨迹面板是 archify 引擎渲染的**静态 SVG + 自定义缩放 / 拖拽**：扩展 CSP 禁止内联查看器脚本，故不内嵌官方交互查看器；需要完整交互时用「打开完整工件」下载官方 HTML。`lifecycle` / `sequence` 渲染路径的代码保留但当前未接线。
-- Scope 的「AI 也受范围约束」开关仅持久化，AI 执行端尚未接线拦截（人工操作过滤 / 越界确认已生效）。
 - 站点「会话」页签是**按 scope 域名做文本匹配**（标题 / 目标 / 消息正文，先廉价匹配再最多深读 30 个会话详情），不是精确的"站点↔会话"外键；站点没填 scope 时无法匹配。
 - 拦截仅请求阶段（放行 / 改头 / 伪造响应 / 丢弃），暂无响应阶段拦截。
 - 采集是**单标签页**的：切换标签页会 detach 旧会话并清空网络 / 脚本 / 控制台缓冲（同时清空面板列表），旧站数据不保留；要对比两站请分别落 Issue / 黑板。
@@ -185,7 +183,6 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 
 - `navigate` 工具全量修复（成功分支补 `ok:true`，此前所有合法导航被提前判失败）。
 - 手动工具统一错误契约（`toolRun`：底层 `{error}` 不再被包装成 `ok:true`，坏 id 等假成功消除）。
-- Scope：host/domain 条目匹配前剥离端口（`localhost:8080` 类条目此前永不命中）。
 - `cookie:set` 校验 CDP `Network.setCookie` 的 `success`（失败不再假成功）。
 - AI 引擎：lite 档精简工具面（18 工具 + 描述截断）、机制档位、文本轮被拒 ≥5 次自动放行收尾、空转 / 截断提示更清晰。
 - 页面浮条（执行 / 导航指示器）改 F12x 黑白样式 + 动作化可读摘要（`eval_js` 显示"操作目标 / 请求地址"而非整段代码）；导航"已到达"提示跟随目标页并延长展示。
@@ -208,6 +205,5 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 ## 路线图
 
 - 宏录制 / 回放（把 Repeater / Intruder / navigate 序列 + 变量注入固化为工具链宏）——手动主线下一项。
-- 站点「会话」页签：按站点聚合相关 AI 会话。
-- Scope 与 AI 执行端接线（越界即拦 / 需确认）。
+- 站点「会话」页签：按站点聚合相关 AI 会话（0.2.2 已实现文本匹配版，0.3.0 将随「项目」容器改为外键）。
 - 方案_v4 后续项：P4 重大结论升级为独立外部审计员、`call_expert` 同焦点去重。

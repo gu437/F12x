@@ -11,14 +11,6 @@ const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").
 
 // --- ctrl 通道：请求-响应 ---
 function api(type, payload = {}) {
-  // Scope 越界守卫（用户主导）：navigate/replay/intruder 目标不在范围内且开启“越界确认”时，先问用户
-  try {
-    if (scope.enabled && scope.guardNav && ["tool:navigate", "tool:replay", "tool:intruder"].includes(type) && payload && payload.url) {
-      if (scopeResult(payload.url) === 0 && !confirm("该目标不在当前 Scope 内：\n" + payload.url + "\n\n仍要继续？（可在 Scope 管理中加白名单）")) {
-        return Promise.resolve({ ok: false, error: "已取消：目标不在 Scope 内" });
-      }
-    }
-  } catch (e) {}
   return new Promise((resolve) => {
     try {
       chrome.runtime.sendMessage({ type, ...payload }, (resp) => {
@@ -168,137 +160,6 @@ function initIssueModule() {
   if (chip) chip.addEventListener("click", () => openIssueManager(null));
   try { chrome.storage.local.get(ISSUE_KEY, (r) => { issues = Array.isArray(r[ISSUE_KEY]) ? r[ISSUE_KEY] : []; issueRefreshChip(); }); } catch (e) {}
 }
-
-// ============ 目标范围 Scope（用户主导边界；不依赖 AI） ============
-const SCOPE_KEY = "f12x_scope_v1";
-const scope = { enabled: true, onlyInScope: false, guardNav: true, aiGuard: false, entries: [] };
-function scopeTypeMatch(type, value, url) {
-  const val = String(value || "").trim().toLowerCase();
-  if (!val) return false;
-  try {
-    const u = new URL(String(url || ""));
-    // host/domain 不含端口（URL.hostname 无端口）——比较前剥离输入中的端口，否则 localhost:8080 类条目永不命中
-    const hostVal = val.replace(/:\d+$/, "");
-    if (type === "host") return u.hostname.toLowerCase() === hostVal;
-    if (type === "domain") return u.hostname === hostVal || u.hostname.endsWith("." + hostVal);
-  } catch (e) {}
-  if (type === "prefix") return String(url || "").startsWith(value);
-  return false;
-}
-// 1=范围内 / 0=范围外 / null=未启用或无规则
-function scopeResult(url) {
-  if (!scope.enabled || !scope.entries.length) return null;
-  const inScope = scope.entries.some(e => scopeTypeMatch(e.type, e.value, url || ""));
-  return inScope ? 1 : 0;
-}
-function scopeHostOf(url) { try { return new URL(String(url || "")).hostname; } catch (e) { return String(url || ""); } }
-function scopeRowClass(url) { const r = scopeResult(url); if (r === null) return ""; return r === 1 ? " scope-in" : " scope-out"; }
-function scopeSave() {
-  try { chrome.storage.local.set({ [SCOPE_KEY]: { enabled: scope.enabled, onlyInScope: scope.onlyInScope, guardNav: scope.guardNav, aiGuard: scope.aiGuard, entries: scope.entries } }); } catch (e) {}
-  scopeApply();
-}
-function scopeApply() {
-  const chip = $("scope-chip");
-  const cnt = $("scope-count");
-  if (chip) { const n = scope.entries.length; chip.title = "Scope 目标范围" + (scope.enabled ? "" : "（已停用）") + " · 点击管理"; }
-  if (cnt) cnt.textContent = scope.enabled && scope.entries.length ? String(scope.entries.length) : "";
-  const only = $("scope-only-chk");
-  if (only) only.checked = !!scope.onlyInScope && scope.enabled;
-  const hint = $("scope-hint");
-  if (hint) hint.textContent = scope.enabled && scope.entries.length
-    ? (scope.onlyInScope ? "已过滤：仅显示范围内请求" : "范围内高亮，越界请求导航/重放需确认")
-    : (scope.enabled ? "未设置范围（全量视为范围内）" : "Scope 已停用");
-  try { renderNetworkTable(); } catch (e) {}
-}
-function scopeAdd(type, value, noSave) {
-  let v = String(value || "").trim();
-  if (!v) return false;
-  if (type === "host" || type === "domain") { v = v.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "").trim(); }
-  if (!v) return false;
-  const exists = scope.entries.some(e => e.type === type && String(e.value).toLowerCase() === v.toLowerCase());
-  if (!exists) { scope.entries.push({ id: "sc_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), type: type === "domain" ? "domain" : type === "prefix" ? "prefix" : "host", value: v }); }
-  if (!noSave) scopeSave();
-  return true;
-}
-async function scopeAddCurrentPage() {
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const url = tabs && tabs[0] && tabs[0].url;
-    if (!url) { toast("无法获取当前页 URL"); return; }
-    const host = scopeHostOf(url);
-    scopeAdd("host", host);
-    toast("已把 " + host + " 加入 Scope");
-    scopeOpenManager();
-  } catch (e) { toast("加入失败：" + (e && e.message)); }
-}
-function scopeAddSelectedRequest() {
-  const sel = app.network.items.find(i => i.id === app.network.selectedId);
-  const url = sel ? sel.url : (app.network.detail && app.network.detail.url);
-  if (!url) { toast("请先在网络列表选中一个请求"); return; }
-  scopeAdd("host", scopeHostOf(url));
-  toast("已把 " + scopeHostOf(url) + " 加入 Scope");
-  scopeOpenManager();
-}
-function scopeRenderListIn(listEl) {
-  listEl.innerHTML = scope.entries.length ? scope.entries.map((e, i) =>
-    '<div class="scope-item"><span class="scope-item-tag">' + esc(e.type === "host" ? "域名" : e.type === "domain" ? "域" : "前缀") + '</span><span class="scope-item-val">' + esc(e.value) + '</span><button class="mini-btn danger" data-rm="' + i + '">删除</button></div>'
-  ).join("") : '<div class="placeholder">尚无范围条目：添加当前页域名 / 选中请求 / 或手输</div>';
-  listEl.querySelectorAll("[data-rm]").forEach(b => b.addEventListener("click", () => {
-    const idx = Number(b.dataset.rm);
-    if (Number.isFinite(idx) && scope.entries[idx]) scope.entries.splice(idx, 1);
-    scopeSave(); scopeRenderListIn(listEl);
-  }));
-}
-function scopeOpenManager() {
-  openModal('<h3>目标范围 Scope</h3>'
-    + '<div class="scope-add-row"><select id="scope-type"><option value="host">域名（主机）</option><option value="domain">域（含子域）</option><option value="prefix">URL 前缀</option></select>'
-    + '<input id="scope-value" class="text-input flex" placeholder="example.com 或 https://example.com/path" />'
-    + '<button id="scope-add-btn" class="mini-btn">添加</button></div>'
-    + '<div class="scope-quick"><button id="scope-add-current" class="mini-btn">＋ 当前页面</button><button id="scope-add-selected" class="mini-btn">＋ 选中请求</button></div>'
-    + '<div id="scope-list" class="scope-list"></div>'
-    + '<div class="scope-opts">'
-    + '<label class="mini-inline"><input type="checkbox" id="scope-enabled" /> 启用范围</label>'
-    + '<label class="mini-inline"><input type="checkbox" id="scope-guard" /> 越界导航/重放先确认</label>'
-    + '<label class="mini-inline"><input type="checkbox" id="scope-ai" /> AI 也受范围约束（生效中：需重载任务）</label>'
-    + '</div>'
-    + '<div class="modal-actions"><button id="scope-close" class="ctrl-btn">完成</button></div>');
-  const box = document.querySelector(".modal-box");
-  if (!box) return;
-  const listEl = box.querySelector("#scope-list");
-  scopeRenderListIn(listEl);
-  box.querySelector("#scope-enabled").checked = !!scope.enabled;
-  box.querySelector("#scope-guard").checked = !!scope.guardNav;
-  box.querySelector("#scope-ai").checked = !!scope.aiGuard;
-  box.querySelector("#scope-add-btn").addEventListener("click", () => {
-    const type = box.querySelector("#scope-type").value;
-    const val = box.querySelector("#scope-value").value;
-    if (scopeAdd(type, val, true)) { scopeSave(); box.querySelector("#scope-value").value = ""; scopeRenderListIn(listEl); }
-    else toast("请输入有效值");
-  });
-  box.querySelector("#scope-add-current").addEventListener("click", () => scopeAddCurrentPage());
-  box.querySelector("#scope-add-selected").addEventListener("click", () => scopeAddSelectedRequest());
-  box.querySelector("#scope-enabled").addEventListener("change", (e) => { scope.enabled = e.target.checked; scopeSave(); });
-  box.querySelector("#scope-guard").addEventListener("change", (e) => { scope.guardNav = e.target.checked; scopeSave(); });
-  box.querySelector("#scope-ai").addEventListener("change", (e) => { scope.aiGuard = e.target.checked; scopeSave(); });
-  const close = box.querySelector("#scope-close");
-  if (close) close.addEventListener("click", () => { try { closeModal(); } catch (e) {} });
-  scopeRenderChipCounts();
-}
-function scopeRenderChipCounts() { scopeApply(); }
-function initScopeModule() {
-  const chip = $("scope-chip");
-  if (chip) chip.addEventListener("click", scopeOpenManager);
-  const only = $("scope-only-chk");
-  if (only) only.addEventListener("change", (e) => { scope.onlyInScope = !!e.target.checked && scope.enabled; scopeSave(); });
-  try {
-    chrome.storage.local.get(SCOPE_KEY, (r) => {
-      const d = r[SCOPE_KEY];
-      if (d) { scope.enabled = d.enabled !== false; scope.onlyInScope = !!d.onlyInScope; scope.guardNav = d.guardNav !== false; scope.aiGuard = !!d.aiGuard; scope.entries = Array.isArray(d.entries) ? d.entries : []; }
-      scopeApply();
-    });
-  } catch (e) { scopeApply(); }
-}
-
 
 // --- 视图层状态 ---
 const app = {
@@ -818,7 +679,6 @@ function filterNetwork() {
 
 function renderNetworkTable() {
   let filtered = filterNetwork();
-  if (scope.enabled && scope.onlyInScope && scope.entries.length) filtered = filtered.filter(it => scopeResult(it.url) !== 0); // Scope：仅显示范围内
   // 域过滤选项动态更新（去重，按请求计数降序）
   const domainSel = $("net-filter-domain");
   const curDom = domainSel.value;
@@ -838,7 +698,7 @@ function renderNetworkTable() {
     ${cols.map(([k, label]) => `<th data-key="${k}">${label}${app.network.sort?.key === k ? (app.network.sort.dir > 0 ? " ↑" : " ↓") : ""}</th>`).join("")}
     <th>操作</th></tr></thead><tbody>
     ${pageItems.map(it => `
-      <tr data-id="${esc(it.id)}" class="${app.network.selectedId === it.id ? "selected" : ""}${scopeRowClass(it.url)}">
+      <tr data-id="${esc(it.id)}" class="${app.network.selectedId === it.id ? "selected" : ""}">
         ${cols.map(([k]) => k === "url"
           ? `<td title="${esc(it.url)}">${esc(it.url || "")}</td>`
           : k === "src"
@@ -4530,7 +4390,6 @@ function init() {
   const safeInit = (name, fn) => { try { fn(); } catch (e) { console.error("[F12x] init " + name + " 失败：", e); try { toast("初始化 " + name + " 失败：" + (e && e.message)); } catch (e2) {} } };
   safeInit("page", initPageModule);
   safeInit("network", initNetworkModule);
-  safeInit("scope", initScopeModule);
   safeInit("issue", initIssueModule);
   safeInit("request", initRequestModule);
   safeInit("cookie", initCookieModule);
