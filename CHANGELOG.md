@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · refactor：下线轨迹与 archify（方案 008）
+- 改了什么：删除 AI 会话「记录 → 轨迹」子页签、生命周期/archify workflow 渲染、`buildWorkflowSpec`、缩放拖拽与「打开完整工件」；删除 `vendor/archify`（20 个文件，约 1.5MB）与对应 CSS；清理 `agent/executor/memory` 中“轨迹”措辞（`session.events` 保留，审计/压缩/批准仍依赖）；手册/README/15 截图/抓图脚本同步，新增 L2「轨迹已下线」。
+- 为什么：轨迹是展示层功能，依赖第三方 archify 引擎与大量专用代码；用户明确要求全面删除，减少维护面与体积，保留审计与黑板即可满足回看需求。
+- 验证：`dev/run.mjs` 79/79；真实 UI 会话记录只剩「黑板 / 审计」，0 `pageerror`；产品代码/文档 `rg` 0 命中 `trajectory|archify|轨迹`；`vendor/archify` 不存在。
+- 提交：`89e4b19`
+
 ### 2026-10-27 · fix：网络页历史回填状态/详情与过滤逻辑
 - 根因：面板通常晚于页面加载才附加调试器，列表里大多是 `performance` 回填的 `hist_*` 条目——`status=null`、`method=null`、无响应头/体；同时 `networkSnapshot()` 只映射 8 个字段，把 `size/history/intercepted` 丢掉；`Network.loadingFinished` 未处理，实时请求的 size 永远为空。
 - 改了什么：回填读取 `responseStatus` / `transferSize`；`loadingFinished` 回填 `encodedDataLength`；snapshot 保留 `size/history/intercepted`；历史条目加「历史」标签与顶部横幅，详情直接给出“无响应体”说明；附带修复非法 URL 正则静默显示全部、表头排序误绑「操作」列、元数据搜索过期结果覆盖。
