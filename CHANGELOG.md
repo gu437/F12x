@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · feat：多步序列与变量提取（方案 009 / P4）
+- 改了什么：新增 `src/sequence.js`（项目级序列 CRUD、`{{var}}` 替换、JSON 路径/header/regex 提取、项目删除级联）；router 增加 `sequence:list/get/save/remove/run`（按步执行、变量跨步传递、失败定位）；项目新增「序列」页签（新建/编辑/运行/删除），Repeater 增加「加入序列」，运行结果逐步显示状态/提取值并可存证据。
+- 为什么：真实越权/业务逻辑常是“登录→创建→读取→换身份读取”，单请求重放无法覆盖；序列把多步请求变成可重复资产。
+- 验证：`dev/run.mjs` 96/96；真实服务三步：登录（提取 `token=tok-A`）→创建（`Bearer {{token}}`，提取 `orderId=5001`）→读取（`/order/{{orderId}}`），三步均 200；UI 新建→加入→运行 1 步 200·30B；0 `pageerror`。
+- 提交：`9f2780b`
+
 ### 2026-10-27 · feat：参数级变形与授权矩阵（方案 009 / P3）
 - 改了什么：新增 `src/mutate.js`（URL path/query、JSON body、请求头的对象引用提取；类型保持；候选值）与 `src/matrix.js`（差异分类）；debugger 增加 `replay_batch_with_identity`（同一身份一次 Cookie/storage 事务批量重放）；router 增加 `mutate:extract`、`matrix:run`；Repeater 增加「矩阵」：身份多选/基线/值编辑/结果着色/单元格预览与存证据/CSV。
 - 为什么：身份档案只解决"能切身份"，还缺"改哪个对象、批量跑、怎么判差异"；这是 OWASP A01/API1/API5 的核心验证动作。
