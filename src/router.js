@@ -16,7 +16,7 @@ import { dispatchTool } from "./executor.js";
 import {
   debuggerAttach, debuggerDetach, get_page_skeleton, eval_js, search_dom,
   get_network_requests, get_network_request_detail, get_console_logs,
-  get_cookies, get_script_list, get_script_content, sendCDP,
+  get_cookies, get_script_list, get_script_content, search_scripts, sendCDP,
   navigate, highlight_element, screenshot, formRecon,
   inspectEnable, inspectDisable, interceptSetMode, interceptAction, interceptReleaseAll,
   metadataSearch, collectElementCodeBySelector
@@ -298,10 +298,17 @@ export function handleMessage(message, sender, sendResponse) {
     })();
     return true;
   }
+  if (type === "tool:script_search") {
+    (async () => {
+      await debuggerAttach().catch(() => {});
+      toolRun(() => search_scripts(message.query, message.limitPerScript, message.maxScripts), "user", `源码搜索 ${message.query}`, sendResponse);
+    })();
+    return true;
+  }
   if (type === "tool:script_content") {
     (async () => {
       await debuggerAttach().catch(() => {});
-      toolRun(() => get_script_content(message.url, message.startLine, message.endLine, message.grep, message.limit), "user", `脚本源码 ${message.url}`, sendResponse);
+      toolRun(() => get_script_content(message.url, message.startLine, message.endLine, message.grep, message.limit, message.id), "user", `脚本源码 ${message.url}`, sendResponse);
     })();
     return true;
   }

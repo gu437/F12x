@@ -1148,14 +1148,17 @@ export async function get_cookies(includeValues, urls) {
 // ============================================================
 
 let scriptList = []; // { scriptId, url, startLine, endLine }
+const scriptSourceCache = new Map(); // scriptId → source（按需读取，切 tab/重载时清空）
 
 export function resetScriptList() {
   scriptList = [];
+  scriptSourceCache.clear();
 }
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
   if (!debuggee || source.tabId !== debuggee.tabId) return; // 同上：只认当前会话
   if (method === "Debugger.scriptParsed") {
+    scriptSourceCache.delete(params.scriptId);
     scriptList.push({
       scriptId: params.scriptId,
       url: params.url,
@@ -1187,8 +1190,56 @@ export async function get_script_list() {
   };
 }
 
-export async function get_script_content(url, startLine, endLine, grep, limit) {
-  const script = scriptList.find(s => s.url === url);
+async function scriptSourceOf(script) {
+  if (!script) return "";
+  if (scriptSourceCache.has(script.scriptId)) return scriptSourceCache.get(script.scriptId);
+  const result = await sendCDP("Debugger.getScriptSource", { scriptId: script.scriptId });
+  const src = result.scriptSource || "";
+  scriptSourceCache.set(script.scriptId, src);
+  return src;
+}
+
+// 跨脚本搜索源码：返回每个脚本命中数 + 首行/片段（并发受控，缓存源码）
+export async function search_scripts(query, limitPerScript = 20, maxScripts = 300) {
+  const q = String(query || "").trim();
+  if (!q) return { ok: true, query: "", results: [], matched: 0, totalHits: 0, scanned: 0 };
+  const ql = q.toLowerCase();
+  const scripts = scriptList.slice(-maxScripts);
+  const results = [];
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < scripts.length) {
+      const s = scripts[cursor++];
+      let src = "";
+      try { src = await scriptSourceOf(s); } catch (e) { continue; }
+      if (!src) continue;
+      const lines = src.split("\n");
+      let count = 0, firstLine = 0;
+      const hits = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].toLowerCase().includes(ql)) {
+          count++;
+          if (!firstLine) firstLine = i + 1;
+          if (hits.length < 3) hits.push({ line: i + 1, text: lines[i].slice(0, 180) });
+        }
+      }
+      if (count) results.push({
+        scriptId: s.scriptId, url: s.url, lines: s.endLine - s.startLine + 1,
+        count, firstLine, hits,
+      });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, scripts.length) }, worker));
+  results.sort((a, b) => b.count - a.count);
+  return {
+    ok: true, query: q, scanned: scripts.length, matched: results.length,
+    totalHits: results.reduce((n, r) => n + r.count, 0),
+    truncated: scriptList.length > maxScripts, results,
+  };
+}
+
+export async function get_script_content(url, startLine, endLine, grep, limit, scriptId) {
+  const script = scriptId ? scriptList.find(s => s.scriptId === scriptId) : scriptList.find(s => s.url === url);
   if (!script) {
     const matches = scriptList.filter(s => s.url && s.url.includes(url));
     if (matches.length === 0) {
@@ -1202,8 +1253,7 @@ export async function get_script_content(url, startLine, endLine, grep, limit) {
   }
 
   try {
-    const result = await sendCDP("Debugger.getScriptSource", { scriptId: script.scriptId });
-    let source = result.scriptSource || "";
+    let source = await scriptSourceOf(script);
 
     if (startLine !== undefined && endLine !== undefined) {
       const lines = source.split("\n");

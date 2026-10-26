@@ -1485,39 +1485,139 @@ function initScriptModule() {
   $("script-grep").addEventListener("keydown", (e) => { if (e.key === "Enter") loadScriptList(); });
 }
 
-async function loadScriptList() {
-  const r = await api("tool:script_list");
-  if (!r.ok) return;
-  const list = $("script-list");
-  const grep = $("script-grep").value.trim();
-  const scripts = (r.scripts || []).filter(s => !grep || s.url.toLowerCase().includes(grep.toLowerCase()));
-  list.innerHTML = scripts.map(s =>
-    `<div class="script-item" data-url="${esc(s.url)}" title="${esc(s.url)}">${esc(s.url || "(inline)")} <span style="color:var(--text-4)">${s.lines} 行</span></div>`).join("")
-    || '<div class="placeholder">无脚本（刷新页面后自动采集）</div>';
-  list.querySelectorAll(".script-item").forEach(el => el.addEventListener("click", () => {
-    list.querySelectorAll(".script-item").forEach(x => x.classList.remove("active"));
-    el.classList.add("active");
-    loadScriptContent(el.dataset.url);
-  }));
+const scriptUI = { list: [], query: "", selectedId: "", source: "", lines: [], url: "", hitLines: [], hitIdx: 0, mode: "all", meta: null };
+
+function scriptName(s) {
+  if (!s.url) return "内联脚本";
+  try { const u = new URL(s.url); return u.pathname.split("/").pop() || u.hostname; } catch (e) { return s.url.split("/").pop() || s.url; }
+}
+function scriptHost(s) {
+  if (!s.url) return s.scriptId ? "#" + s.scriptId.slice(-6) : "";
+  try { return new URL(s.url).hostname; } catch (e) { return ""; }
 }
 
-async function loadScriptContent(url) {
+async function loadScriptList() {
+  const q = $("script-grep").value.trim();
+  scriptUI.query = q;
+  const list = $("script-list");
+  list.innerHTML = '<div class="placeholder">' + (q ? "搜索源码中…" : "加载中…") + "</div>";
+  if (q) {
+    const r = await api("tool:script_search", { query: q });
+    if (!r.ok) { list.innerHTML = `<div class="placeholder">搜索失败：${esc(r.error)}</div>`; return; }
+    scriptUI.mode = "search";
+    scriptUI.meta = r;
+    scriptUI.list = (r.results || []).map(x => ({ scriptId: x.scriptId, url: x.url, lines: x.lines, count: x.count, firstLine: x.firstLine }));
+    renderScriptList();
+    if (!scriptUI.list.length) {
+      $("script-content").innerHTML = `<div class="placeholder">没有脚本包含「${esc(q)}」（共扫描 ${r.scanned || 0} 个）</div>`;
+      return;
+    }
+    const pick = scriptUI.list.find(s => s.scriptId === scriptUI.selectedId) || scriptUI.list[0];
+    selectScript(pick.scriptId);
+    return;
+  }
+  const r = await api("tool:script_list");
+  if (!r.ok) { list.innerHTML = `<div class="placeholder">读取失败：${esc(r.error)}</div>`; return; }
+  scriptUI.mode = "all";
+  scriptUI.meta = null;
+  scriptUI.list = r.scripts || [];
+  renderScriptList();
+  if (!scriptUI.list.length) { $("script-content").innerHTML = '<div class="placeholder">无脚本（刷新页面后自动采集）</div>'; return; }
+  const pick = scriptUI.list.find(s => s.scriptId === scriptUI.selectedId) || scriptUI.list[0];
+  selectScript(pick.scriptId);
+}
+
+function renderScriptList() {
+  const list = $("script-list");
+  const q = scriptUI.query;
+  const meta = scriptUI.mode === "search"
+    ? `命中 ${scriptUI.meta?.matched || 0} 个脚本 · ${scriptUI.meta?.totalHits || 0} 处`
+    : `共 ${scriptUI.list.length} 个脚本`;
+  list.innerHTML = `<div class="script-list-meta">${q ? "源码搜索：" + esc(q) + " · " + meta : meta}</div>`
+    + scriptUI.list.map(s => {
+      const name = scriptName(s), host = scriptHost(s);
+      const hits = scriptUI.mode === "search" ? `<span class="si-hits">${s.count} 处</span>` : "";
+      return `<div class="script-item ${s.scriptId === scriptUI.selectedId ? "active" : ""}" data-id="${esc(s.scriptId)}" title="${esc(s.url || name)}">
+        <div class="si-top"><span class="si-tag ${s.url ? "ext" : "inline"}">${s.url ? "外链" : "内联"}</span><span class="si-name">${esc(name)}</span>${hits}</div>
+        <div class="si-sub">${esc(host)} · ${s.lines || 0} 行${scriptUI.mode === "search" && s.firstLine ? " · 首行 " + s.firstLine : ""}</div>
+      </div>`;
+    }).join("");
+  list.querySelectorAll(".script-item").forEach(el => el.addEventListener("click", () => selectScript(el.dataset.id)));
+}
+
+async function selectScript(scriptId) {
+  if (!scriptId) return;
+  scriptUI.selectedId = scriptId;
+  $("script-list").querySelectorAll(".script-item").forEach(x => x.classList.toggle("active", x.dataset.id === scriptId));
   const content = $("script-content");
   content.innerHTML = '<div class="placeholder">加载中…</div>';
-  const r = await api("tool:script_content", { url, limit: 200000 });
-  if (!r.ok) { content.innerHTML = `<div class="placeholder">${esc(r.error)}</div>`; return; }
-  const lines = (r.content || "").split("\n");
-  // grep 高亮（方案 3.1：源码行号 + grep 高亮）
-  const grepQ = $("script-grep").value.trim().toLowerCase();
-  content.innerHTML = `
-    <div class="script-actions"><button class="mini-btn" id="script-send-ai">送片段给 AI</button></div>
-    <pre class="script-pre">${lines.map((l, i) => `<span class="${grepQ && l.toLowerCase().includes(grepQ) ? "hl" : ""}"><span class="ln">${i + 1}</span>${esc(l) || " "}</span>`).join("\n")}</pre>`;
-  // 送片段给 AI（选中文本优先，否则前 60 行）
-  $("script-send-ai").addEventListener("click", async () => {
-    const sel = window.getSelection() ? window.getSelection().toString().trim() : "";
-    const frag = sel || lines.slice(0, 60).join("\n");
-    await aiSendFromPage(`分析以下代码片段（来源 ${url}），关注安全缺陷（XSS/SQLi/注入/敏感信息泄漏）：\n${frag.substring(0, 4000)}`, "代码片段分析", true);
+  const r = await api("tool:script_content", { id: scriptId, limit: 200000 });
+  if (!r.ok) { content.innerHTML = `<div class="placeholder">读取失败：${esc(r.error)}</div>`; return; }
+  const s = scriptUI.list.find(x => x.scriptId === scriptId) || {};
+  scriptUI.source = r.content || "";
+  scriptUI.lines = scriptUI.source.split("\n");
+  scriptUI.url = s.url || "";
+  const q = scriptUI.query.toLowerCase();
+  scriptUI.hitLines = q ? scriptUI.lines.map((l, i) => l.toLowerCase().includes(q) ? i + 1 : 0).filter(Boolean) : [];
+  scriptUI.hitIdx = 0;
+  renderScriptContent();
+}
+
+function scriptMarkLine(line, q) {
+  if (!q) return esc(line) || " ";
+  const i = line.toLowerCase().indexOf(q.toLowerCase());
+  if (i < 0) return esc(line) || " ";
+  return esc(line.slice(0, i)) + "<mark>" + esc(line.slice(i, i + q.length)) + "</mark>" + esc(line.slice(i + q.length));
+}
+
+function renderScriptContent() {
+  const content = $("script-content");
+  const s = scriptUI.list.find(x => x.scriptId === scriptUI.selectedId) || {};
+  const q = scriptUI.query;
+  const hitCount = scriptUI.hitLines.length;
+  const nav = hitCount
+    ? `<button class="mini-btn" data-scr-nav="-1" title="上一处">‹</button><span class="sh-count">${scriptUI.hitIdx + 1}/${hitCount}</span><button class="mini-btn" data-scr-nav="1" title="下一处">›</button>`
+    : "";
+  content.innerHTML = `<div class="script-head">
+      <div class="sh-main"><span class="sh-name">${esc(scriptName(s))}</span><span class="sh-url" title="${esc(scriptUI.url)}">${esc(scriptUI.url || ("内联脚本 · #" + String(scriptUI.selectedId || "").slice(-6)))}</span></div>
+      <div class="sh-ops">${nav}<button class="mini-btn" data-scr="copy">复制</button><button class="mini-btn" data-scr="download">下载</button><button class="mini-btn" data-scr="ai">送片段给 AI</button></div>
+    </div>
+    <pre class="script-pre">${scriptUI.lines.map((l, i) => {
+      const hit = q && l.toLowerCase().includes(q.toLowerCase());
+      return `<span class="sl${hit ? " hl" : ""}" id="scr-ln-${i + 1}"><span class="ln">${i + 1}</span>${scriptMarkLine(l, q)}</span>`;
+    }).join("\n")}</pre>`;
+  content.querySelector('[data-scr="copy"]').addEventListener("click", () => copyText(scriptUI.source, "已复制脚本源码"));
+  content.querySelector('[data-scr="download"]').addEventListener("click", () => {
+    const blob = new Blob([scriptUI.source], { type: "text/javascript" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (scriptName(s) || "script.js").replace(/[^\w.\-]+/g, "_");
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   });
+  content.querySelector('[data-scr="ai"]').addEventListener("click", async () => {
+    const sel = window.getSelection() ? window.getSelection().toString().trim() : "";
+    const frag = sel || scriptUI.lines.slice(0, 60).join("\n");
+    await aiSendFromPage(`分析以下代码片段（来源 ${scriptUI.url || "内联脚本"}），关注安全缺陷（XSS/SQLi/注入/敏感信息泄漏）：\n${frag.substring(0, 4000)}`, "代码片段分析", true);
+  });
+  content.querySelectorAll("[data-scr-nav]").forEach(b => b.addEventListener("click", () => {
+    if (!scriptUI.hitLines.length) return;
+    scriptUI.hitIdx = (scriptUI.hitIdx + Number(b.dataset.scrNav) + scriptUI.hitLines.length) % scriptUI.hitLines.length;
+    showScriptHit();
+    const cnt = content.querySelector(".sh-count");
+    if (cnt) cnt.textContent = (scriptUI.hitIdx + 1) + "/" + scriptUI.hitLines.length;
+  }));
+  if (scriptUI.hitLines.length) showScriptHit();
+}
+
+function showScriptHit() {
+  const content = $("script-content");
+  content.querySelectorAll(".sl.hit-active").forEach(x => x.classList.remove("hit-active"));
+  const line = scriptUI.hitLines[scriptUI.hitIdx];
+  const el = document.getElementById("scr-ln-" + line);
+  if (!el) return;
+  el.classList.add("hit-active");
+  el.scrollIntoView({ block: "center" });
 }
 
 // ============================================================
