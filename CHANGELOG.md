@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · feat：身份档案与身份重放（方案 009 / P2）
+- 改了什么：新增 `src/identity.js`（项目级 Cookie + localStorage/sessionStorage + 认证头、CRUD、项目删除级联）；debugger 增加 `capture_identity_state` 与 `withIdentityState` 事务（快照→应用→finally 恢复，失败保留 `identity_txn_v1`）；`replay_request` 支持 `identity`（同源校验、合并认证头）；router 增加 `identity:list/get/save/remove/capture`，`tool:replay` 接受 `identityId`；Repeater 增加身份选择器与「管理身份」（抓取/编辑头/删除）。
+- 为什么：访问控制测试必须先能控制身份；只读 Cookie 无法覆盖 SPA 的 localStorage Bearer token，且切身份不能污染用户当前会话。
+- 验证：`dev/run.mjs` 88/88；真实浏览器：抓用户 A（Cookie `sid=A` + localStorage `tok-A`）→ 当前会话切 B → 以 A 重放返回 `{"sid":"A","auth":"Bearer A"}` → 结束后 Cookie `sid=B`、token `tok-B`（已恢复）；0 `pageerror`。
+- 提交：`9b683b2`
+
 ### 2026-10-27 · feat：证据底座（方案 009 / P1）
 - 改了什么：新增 `src/evidence.js`（项目级证据、SHA-256、2MB 截断标记、列表/读取/删除、项目删除级联）；router 新增 `evidence:list/get/save/remove/attach/detach`，Issue 增加 `evidenceIds`；项目页新增「证据」页签（卡片/查看/复制 curl/关联 Issue/删除），网络详情与 Repeater 增加「存证据」；证据不可变、索引与正文分键。
 - 为什么：Issue 证据原来只是自由文本，网络缓冲会轮转；没有不可变证据对象，项目容器无法交付可复现结果。
