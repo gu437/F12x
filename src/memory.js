@@ -814,3 +814,73 @@ export async function migrateSitesToProjectsIfNeeded() {
   await chrome.storage.local.remove(["sites_v1", "active_site_v1"]);
   return { migrated };
 }
+
+// === 当前项目（P4：Issue / 手动黑板等持久数据的归属） ===
+export const ACTIVE_PROJECT_KEY = "active_project_v1";
+
+export async function getActiveProjectId() {
+  const r = await chrome.storage.local.get(ACTIVE_PROJECT_KEY);
+  return r[ACTIVE_PROJECT_KEY] || null;
+}
+
+export async function setActiveProjectId(projectId) {
+  if (projectId) await chrome.storage.local.set({ [ACTIVE_PROJECT_KEY]: projectId });
+  else await chrome.storage.local.remove(ACTIVE_PROJECT_KEY);
+}
+
+// 取当前项目；没有就取第一个；一个都没有就建「默认项目」
+export async function ensureActiveProject() {
+  const activeId = await getActiveProjectId();
+  if (activeId) {
+    const p = await getProject(activeId);
+    if (p) return p;
+  }
+  const list = await listProjects();
+  if (list.length) {
+    await setActiveProjectId(list[0].id);
+    return await getProject(list[0].id);
+  }
+  const p = await createProject("默认项目", "自动创建：Issue / 手动黑板等持久数据的默认归属");
+  await setActiveProjectId(p.id);
+  return p;
+}
+
+const newIssueId = () => "iss_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
+
+// 旧全局 Issue 库（f12x_issues_v1）→「迁移项目（旧数据）」；留 issues_backup_v1 备份；幂等
+export async function migrateIssuesToProjectsIfNeeded() {
+  const r = await chrome.storage.local.get("f12x_issues_v1");
+  const arr = r["f12x_issues_v1"];
+  if (!Array.isArray(arr) || !arr.length) {
+    if (r["f12x_issues_v1"] !== undefined) await chrome.storage.local.remove("f12x_issues_v1");
+    return { migrated: 0 };
+  }
+  const list = await listProjects();
+  const found = list.find((p) => p.name === "迁移项目（旧数据）");
+  let pid = found && found.id;
+  if (!pid) {
+    const p = await createProject("迁移项目（旧数据）", "由旧版全局 Issue 库迁移，可自行改名");
+    pid = p.id;
+  }
+  const project = await getProject(pid);
+  project.issues = Array.isArray(project.issues) ? project.issues : [];
+  for (const it of arr) {
+    if (!it || (!it.title && !it.url)) continue;
+    project.issues.push({
+      id: it.id || newIssueId(),
+      title: String(it.title || "未命名").substring(0, 200),
+      sev: String(it.sev || "medium").substring(0, 20),
+      status: String(it.status || "open").substring(0, 20),
+      method: String(it.method || "").substring(0, 12),
+      url: String(it.url || "").substring(0, 2000),
+      desc: String(it.desc || "").substring(0, 20000),
+      evidence: String(it.evidence || "").substring(0, 50000),
+      createdAt: it.createdAt || Date.now(),
+      updatedAt: it.updatedAt || it.createdAt || Date.now(),
+    });
+  }
+  await saveProject(project);
+  await chrome.storage.local.set({ issues_backup_v1: arr });
+  await chrome.storage.local.remove("f12x_issues_v1");
+  return { migrated: arr.length, projectId: pid };
+}

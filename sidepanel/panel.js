@@ -23,12 +23,17 @@ function api(type, payload = {}) {
 
 let aiPendingRef = null; // “→ AI”暂存的请求引用，选好会话后自动填入输入框
 // ============ 手动 Issue 工作台（用户自主记录漏洞/发现；不依赖 AI；Markdown/HTML 导出） ============
-const ISSUE_KEY = "f12x_issues_v1";
 let issues = [];
 const ISSUE_SEV = { critical: "严重", high: "高", medium: "中", low: "低", info: "信息" };
 const ISSUE_STATUS = { open: "待处理", confirmed: "已确认", fixed: "已修复", wontfix: "不修复" };
-function issuePersist() { try { chrome.storage.local.set({ [ISSUE_KEY]: issues }); } catch (e) {} issueRefreshChip(); }
 function issueRefreshChip() { const c = $("issue-count"); if (c) c.textContent = issues.length ? String(issues.length) : ""; }
+// Issue 归属当前项目（方案 001 / P4）：不再有全局 Issue 库
+async function issueRefresh() {
+  const r = await api("issue:list");
+  if (r.ok) { issues = r.issues || []; app.issueProject = r.project || null; }
+  issueRefreshChip();
+  return r;
+}
 function issueNew(defaults) {
   const now = Date.now();
   return Object.assign({ id: "iss_" + now.toString(36) + Math.random().toString(36).slice(2, 5), title: "", sev: "medium", status: "open", url: "", method: "", desc: "", evidence: "", createdAt: now, updatedAt: now }, defaults || {});
@@ -47,11 +52,12 @@ function issueRenderList(listEl, box) {
     const it = issues.find(x => x.id === b.closest(".issue-item").dataset.id);
     if (it && box) issueFillForm(box, it);
   }));
-  listEl.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
+  listEl.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
     const id = b.closest(".issue-item").dataset.id;
-    if (!confirm("删除该 Issue？")) return;
-    issues = issues.filter(x => x.id !== id);
-    issuePersist(); issueRenderList(listEl, box);
+    if (!confirm("删除该 Issue？删除后不可恢复")) return;
+    const r = await api("issue:delete", { id });
+    if (!r.ok) return toast("删除失败：" + (r.error || ""));
+    await issueRefresh(); issueRenderList(listEl, box);
   }));
 }
 function issueGrow(el) { if (!el) return; el.style.height = "auto"; el.style.height = Math.max(42, el.scrollHeight) + "px"; }
@@ -115,8 +121,10 @@ function issueExportHtml() {
     + rows.map(rowHtml).join("") + '</body></html>';
   issueDownload("f12x-issues-report.html", html, "text/html;charset=utf-8");
 }
-function openIssueManager(prefill) {
+async function openIssueManager(prefill) {
+  await issueRefresh();
   openModal('<h3>漏洞 / Issue 工作台</h3>'
+    + '<div class="issue-sub">当前项目：' + esc(app.issueProject && app.issueProject.name || "—") + ' · 用户不删除就不清空</div>'
     + '<div class="issue-form">'
     + '<label class="issue-lbl">标题（必填）<input id="issue-title" class="text-input flex" placeholder="如：登录接口存在越权（IDOR）" /></label>'
     + '<div class="issue-row issue-field">'
@@ -140,15 +148,14 @@ function openIssueManager(prefill) {
   issueRenderList(listEl, box);
   const urlEl = box.querySelector("#issue-url");
   if (urlEl) { urlEl.addEventListener("input", () => issueGrow(urlEl)); issueGrow(urlEl); }
-  box.querySelector("#issue-save").addEventListener("click", () => {
+  box.querySelector("#issue-save").addEventListener("click", async () => {
     const f = issueCurrentForm(box);
     if (!f.title || !f.url) { toast("标题与 URL 必填"); return; }
-    const id = box._issueEditId;
-    if (id) { const it = issues.find(x => x.id === id); if (it) Object.assign(it, f, { updatedAt: Date.now() }); }
-    else issues.push(issueNew(f));
+    const r = await api("issue:save", { id: box._issueEditId || "", fields: f });
+    if (!r.ok) return toast("保存失败：" + (r.error || ""));
     box._issueEditId = null;
-    issuePersist(); issueRenderList(listEl, box);
-    toast("Issue 已保存");
+    await issueRefresh(); issueRenderList(listEl, box);
+    toast("Issue 已保存到项目");
   });
   box.querySelector("#issue-clear").addEventListener("click", () => { box._issueEditId = null; issueFillForm(box, issueNew()); });
   box.querySelector("#issue-export-md").addEventListener("click", issueExportMarkdown);
@@ -158,7 +165,7 @@ function openIssueManager(prefill) {
 function initIssueModule() {
   const chip = $("issue-chip");
   if (chip) chip.addEventListener("click", () => openIssueManager(null));
-  try { chrome.storage.local.get(ISSUE_KEY, (r) => { issues = Array.isArray(r[ISSUE_KEY]) ? r[ISSUE_KEY] : []; issueRefreshChip(); }); } catch (e) {}
+  issueRefresh().catch(() => {});
 }
 
 // --- 视图层状态 ---
@@ -177,6 +184,7 @@ const app = {
   jsHistory: [],
   currentView: "page",
   aiRunning: false,
+  issueProject: null, // 当前 Issue 归属项目（P4）
   inspectOn: false,
   audit: [] // AI 动作审计日志（方案 3.2⑤ 一切动作留痕，状态条可展开）
 };
@@ -4158,3 +4166,4 @@ function init() {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+

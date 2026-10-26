@@ -25,7 +25,8 @@ import {
   listConversations, getConversation, saveConversation,
   createConversation, deleteConversation,
   listProjects, createProject, renameProject, deleteProject,
-  listAIFindings, removeAIFinding, upsertFact, AI_PROJECT_ID
+  listAIFindings, removeAIFinding, upsertFact, AI_PROJECT_ID,
+  ensureActiveProject, addProjectIssue, updateProjectIssue, removeProjectIssue
 } from "./memory.js";
 
 const VERSION = "0.2.2";
@@ -406,6 +407,50 @@ export function handleMessage(message, sender, sendResponse) {
   }
 
   // === 站点工作区 ===
+  if (type === "project:active") {
+    // 当前项目 + 项目列表（Issue / 手动黑板等持久数据的归属）
+    (async () => {
+      try {
+        const p = await ensureActiveProject();
+        sendResponse({ ok: true, project: { id: p.id, name: p.name }, projects: await listProjects() });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "issue:list") {
+    (async () => {
+      try {
+        const p = await ensureActiveProject();
+        sendResponse({ ok: true, project: { id: p.id, name: p.name }, issues: p.issues || [] });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "issue:save") {
+    (async () => {
+      try {
+        const p = await ensureActiveProject();
+        const fields = message.fields || {};
+        const res = message.id
+          ? await updateProjectIssue(p.id, message.id, fields)
+          : await addProjectIssue(p.id, fields);
+        if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true, id: res.issue && res.issue.id });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "issue:delete") {
+    (async () => {
+      try {
+        const p = await ensureActiveProject();
+        const res = await removeProjectIssue(p.id, message.id);
+        if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
   if (type === "project:list") {
     (async () => {
       try { sendResponse({ ok: true, projects: await listProjects() }); }
