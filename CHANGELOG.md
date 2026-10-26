@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · feat：语义 diff 与接口基线（方案 009 / P5）
+- 改了什么：新增 `src/diff.js`（JSON 路径级 added/removed/changed、类型变化、默认忽略 timestamp/requestId/csrf 等易变字段，非 JSON 退化为行差异）与 `src/baseline.js`（项目级接口基线 CRUD、pathKey、项目删除级联）；router 增加 `baseline:save/list/get/remove/diff`；矩阵单元格自动与基线做字段级 diff 并新增 `field-diff`；Repeater 增加「存基线 / 对比基线」；矩阵详情展示差异列表。
+- 为什么：越权常表现为字段多出或值变化（`role`/`email`/`ownerId`），只看状态/长度会漏判；基线让“同一接口前后变化”可重复比较。
+- 验证：`dev/run.mjs` 100/100；真实 A/B profile：B 相对 A 为 length-diff + 新增 1/变化 1（`$.role`，timestamp 被忽略）；基线对比结果一致；UI 存基线 1 条，对比显示 `+$.email` / `~$.role`；0 `pageerror`。
+- 提交：`4aa285a`
+
 ### 2026-10-27 · feat：多步序列与变量提取（方案 009 / P4）
 - 改了什么：新增 `src/sequence.js`（项目级序列 CRUD、`{{var}}` 替换、JSON 路径/header/regex 提取、项目删除级联）；router 增加 `sequence:list/get/save/remove/run`（按步执行、变量跨步传递、失败定位）；项目新增「序列」页签（新建/编辑/运行/删除），Repeater 增加「加入序列」，运行结果逐步显示状态/提取值并可存证据。
 - 为什么：真实越权/业务逻辑常是“登录→创建→读取→换身份读取”，单请求重放无法覆盖；序列把多步请求变成可重复资产。
