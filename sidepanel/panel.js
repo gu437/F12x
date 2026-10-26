@@ -180,7 +180,7 @@ const app = {
     columns: ["method", "status", "url"], // 默认只看标识列；类型/大小/来源在详情「常规」
     consoleLogs: []
   },
-  rep: { lastResponse: null, history: [], prevBody: "", identityId: "" },
+  rep: { lastResponse: null, history: [], prevBody: "", identityId: "" }, matrix: { refs: [], template: null, result: null, selected: null },
   jsHistory: [],
   currentView: "page",
   aiRunning: false,
@@ -1255,6 +1255,119 @@ async function identityEditHeaders(id) {
   });
 }
 
+// ============================================================
+// ===== 授权矩阵（方案 009 / P3：身份 × 对象引用） =====
+// ============================================================
+function matrixTemplate() {
+  return {
+    method: $("rep-method") ? $("rep-method").value : "GET",
+    url: $("rep-url") ? $("rep-url").value.trim() : "",
+    headers: parseHeaderLines($("rep-headers") ? $("rep-headers").value : ""),
+    body: ($("rep-body") && $("rep-body").value) ? $("rep-body").value : null,
+  };
+}
+
+function matrixVerdictText(v) {
+  return ({ exposure: "越权暴露", "status-diff": "状态差异", "length-diff": "长度差异", same: "相同", error: "错误", unknown: "未知" })[v] || v;
+}
+
+async function openMatrixDialog() {
+  const template = matrixTemplate();
+  if (!template.url) return toast("先填 URL");
+  const ex = await api("mutate:extract", { template });
+  if (!ex.ok) return toast("提取失败：" + (ex.error || ""));
+  const refs = ex.refs || [];
+  if (!refs.length) return toast("没有识别到对象引用：可在 URL/JSON/查询参数/头里放 id 再试");
+  const pr = await api("identity:list", { projectId: identityProjectId() });
+  const identities = pr.ok ? (pr.identities || []) : [];
+  app.matrix = { refs, template, result: null, selected: null };
+  openModal(`<h3>授权矩阵</h3>
+    <div class="mx-form">
+      <label>对象引用</label>
+      <select id="mx-ref" class="select-mini">${refs.map((r) => `<option value="${esc(r.id)}">${esc(r.label)} = ${esc(r.value)}</option>`).join("")}</select>
+      <label>变形值（换行或逗号分隔）</label>
+      <textarea id="mx-values" class="code-input" rows="2"></textarea>
+      <label>身份（至少 2 个才能对比）</label>
+      <div id="mx-ids" class="mx-ids">
+        <label class="mini-label"><input type="checkbox" id="mx-current" checked /> 当前会话</label>
+        ${identities.map((x) => `<label class="mini-label"><input type="checkbox" class="mx-id" value="${esc(x.id)}" checked /> ${esc(x.name)}</label>`).join("")}
+      </div>
+      <label>基线身份</label>
+      <select id="mx-base" class="select-mini"><option value="">当前会话</option>${identities.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}</select>
+      <div class="proj-actions"><button id="mx-run" class="ctrl-btn primary">运行矩阵</button><span id="mx-status" class="mini-label"></span></div>
+    </div>
+    <div id="mx-results"></div>
+    <div id="mx-detail"></div>
+    <div class="modal-actions"><button id="mx-close" class="primary">关闭</button></div>`);
+  const box = document.querySelector(".modal-box");
+  if (!box) return;
+  const fillValues = () => {
+    const ref = refs.find((x) => x.id === $("mx-ref").value) || refs[0];
+    $("mx-values").value = [ref.value, ...(ref.candidates || [])].join("\n");
+  };
+  fillValues();
+  $("mx-ref").addEventListener("change", fillValues);
+  $("mx-close").addEventListener("click", closeModal);
+  $("mx-run").addEventListener("click", async () => {
+    const ref = refs.find((x) => x.id === $("mx-ref").value);
+    const valuesText = $("mx-values").value.trim();
+    if (!valuesText) return toast("变形值不能为空");
+    const identityIds = [...box.querySelectorAll(".mx-id:checked")].map((x) => x.value);
+    const includeCurrent = !!($("mx-current") && $("mx-current").checked);
+    if (!identityIds.length && !includeCurrent) return toast("至少选一个身份");
+    $("mx-status").textContent = "运行中…";
+    $("mx-run").disabled = true;
+    const r = await api("matrix:run", {
+      template, ref, valuesText, identityIds, includeCurrent,
+      baselineIdentityId: $("mx-base").value,
+    });
+    $("mx-run").disabled = false;
+    $("mx-status").textContent = r.ok ? "" : "失败";
+    if (!r.ok) return toast("矩阵失败：" + (r.error || ""));
+    app.matrix.result = r;
+    renderMatrixResult(r);
+  });
+}
+
+function renderMatrixResult(r) {
+  const values = r.values || [];
+  const rows = r.rows || [];
+  if (!rows.length) return projPane("mx-results", '<div class="placeholder">无结果</div>');
+  const head = `<tr><th>身份</th>${values.map((v) => `<th>${esc(v)}</th>`).join("")}</tr>`;
+  const body = rows.map((row) => `<tr><td class="mx-idname">${esc(row.name)}</td>${row.cells.map((c, i) => `
+    <td class="mx-cell mx-${esc(c.verdict || "unknown")}" data-mx-r="${rows.indexOf(row)}" data-mx-c="${i}" title="${esc(matrixVerdictText(c.verdict))} · 基线 ${esc(String(c.baselineStatus))}/${esc(String(c.baselineLength))}">
+      <div>${c.error ? "ERR" : esc(String(c.status))}</div><div class="mx-len">${esc(String(c.length))}</div>
+    </td>`).join("")}</tr>`).join("");
+  const box = $("mx-results");
+  if (!box) return;
+  box.innerHTML = `<div class="mx-table-wrap"><table class="mx-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <div class="proj-actions"><button id="mx-csv" class="mini-btn">导出 CSV</button></div>`;
+  const csvBtn = $("mx-csv");
+  if (csvBtn) csvBtn.addEventListener("click", () => {
+    const escCsv = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+    const lines = [["identity", ...values].map(escCsv).join(",")];
+    for (const row of rows) lines.push([row.name, ...row.cells.map((c) => `${c.status}/${c.length}/${c.verdict}`)].map(escCsv).join(","));
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "f12x-matrix.csv"; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  });
+  box.querySelectorAll("[data-mx-r]").forEach((td) => td.addEventListener("click", () => {
+    const row = rows[Number(td.dataset.mxR)], cell = row.cells[Number(td.dataset.mxC)];
+    app.matrix.selected = { row, cell };
+    const det = $("mx-detail");
+    if (det) det.innerHTML = `<div class="ev-sec-title">${esc(row.name)} · ${esc(cell.value)} · ${esc(String(cell.status))}（${esc(matrixVerdictText(cell.verdict))}）</div>
+      <pre class="ev-pre">${esc(cell.body || "")}</pre>
+      <div class="proj-actions"><button id="mx-save-ev" class="mini-btn">存为证据</button></div>`;
+    const sv = $("mx-save-ev");
+    if (sv) sv.addEventListener("click", () => evidenceSaveDialog({
+      kind: "matrix-cell", source: "matrix",
+      title: `矩阵 ${row.name} ${cell.value} → ${cell.status}`,
+      request: cell.request,
+      response: { status: cell.status, headers: cell.headers || {}, body: cell.body || "" },
+    }));
+  }));
+}
+
 function initRequestModule() {
   document.querySelectorAll('#view-request .tabs .tab').forEach(t => {
     t.addEventListener("click", () => {
@@ -1267,6 +1380,7 @@ function initRequestModule() {
   $("rep-send").addEventListener("click", repSend);
   if ($("rep-identity")) $("rep-identity").addEventListener("change", () => { app.rep.identityId = $("rep-identity").value; });
   if ($("rep-identity-manage")) $("rep-identity-manage").addEventListener("click", openIdentityManager);
+  if ($("rep-matrix")) $("rep-matrix").addEventListener("click", openMatrixDialog);
   refreshIdentitySelect().catch(() => {});
   if ($("rep-evidence")) $("rep-evidence").addEventListener("click", saveRepeaterEvidence);
   // Repeater 历史存到项目黑板
@@ -1840,7 +1954,7 @@ async function saveRepeaterEvidence() {
       method: $("rep-method") ? $("rep-method").value : "GET",
       url,
       headers: parseHeaderLines($("rep-headers") ? $("rep-headers").value : ""),
-      body: $("rep-body") ? $("rep-body").value : "",
+      body: ($("rep-body") && $("rep-body").value) ? $("rep-body").value : null,
       capturedAt: Date.now(),
     },
     response: resp,

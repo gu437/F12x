@@ -1863,3 +1863,20 @@ body {
 .idm-actions { display: flex; gap: 6px; margin-top: 4px; }
 .idm-new { border-top: 1px dashed var(--surface-4); padding-top: 6px; display: flex; flex-direction: column; gap: 5px; }
 .idm-new label { font-size: 11px; color: var(--text-3); }
+
+/* 授权矩阵（方案 009 / P3） */
+.mx-form { display: flex; flex-direction: column; gap: 5px; margin-bottom: 6px; }
+.mx-form label { font-size: 11px; color: var(--text-3); }
+.mx-ids { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.mx-table-wrap { overflow: auto; max-height: 260px; border: 1px solid var(--surface-4); border-radius: 8px; }
+.mx-table { border-collapse: collapse; font-size: 10px; width: 100%; }
+.mx-table th, .mx-table td { border-bottom: 1px solid var(--surface-4); padding: 3px 5px; text-align: left; white-space: nowrap; }
+.mx-table th { position: sticky; top: 0; background: var(--surface-2); z-index: 1; font-weight: 600; }
+.mx-idname { font-weight: 600; max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+.mx-cell { cursor: pointer; font-family: var(--mono); }
+.mx-len { color: var(--text-4); font-size: 9px; }
+.mx-exposure { background: #fde8e8; color: #a40000; font-weight: 700; }
+.mx-status-diff { background: #fff4d6; color: #7a4a00; }
+.mx-length-diff { background: #eef4ff; color: #1d4ed8; }
+.mx-same { color: var(--text-2); }
+.mx-error { background: #f3f4f6; color: #b91c1c; }

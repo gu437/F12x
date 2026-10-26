@@ -17,7 +17,7 @@ import {
   debuggerAttach, debuggerDetach, get_page_skeleton, eval_js, search_dom,
   get_network_requests, get_network_request_detail, get_console_logs,
   get_cookies, get_script_list, get_script_content, search_scripts, sendCDP,
-  navigate, highlight_element, screenshot, formRecon, capture_identity_state,
+  navigate, highlight_element, screenshot, formRecon, capture_identity_state, replay_batch_with_identity,
   inspectEnable, inspectDisable, interceptSetMode, interceptAction, interceptReleaseAll,
   metadataSearch, collectElementCodeBySelector
 } from "./debugger.js";
@@ -31,6 +31,8 @@ import {
 } from "./memory.js";
 import { saveEvidence, listEvidence, getEvidence, removeEvidence, markEvidenceIssue } from "./evidence.js";
 import { saveIdentity, listIdentities, getIdentity, removeIdentity } from "./identity.js";
+import { extractRefs, applyRef, valuesFromText, candidatesFor } from "./mutate.js";
+import { classifyCell } from "./matrix.js";
 
 // 持久数据必须落在项目里：没有项目就明确报错（项目只在项目页创建）
 async function requireActiveProjectId(explicitId) {
@@ -499,6 +501,73 @@ export function handleMessage(message, sender, sendResponse) {
       try {
         const p = await ensureActiveProject();
         sendResponse({ ok: true, project: p ? { id: p.id, name: p.name } : null, issues: p ? (p.issues || []) : [] });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "mutate:extract") {
+    (async () => {
+      try {
+        const res = extractRefs(message.template || {});
+        const refs = res.refs.map((x) => ({ ...x, candidates: candidatesFor(x, "neighbors", 4) }));
+        sendResponse({ ok: true, refs, method: res.method });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "matrix:run") {
+    (async () => {
+      try {
+        await debuggerAttach().catch(() => {});
+        const template = message.template || {};
+        const ref = message.ref;
+        const values = valuesFromText(message.valuesText || "", 50);
+        if (!ref || !ref.id) return sendResponse({ ok: false, error: "请选择要变形的对象引用", code: "INVALID" });
+        if (!values.length) return sendResponse({ ok: false, error: "变形值不能为空", code: "INVALID" });
+        const identities = [];
+        for (const id of (message.identityIds || [])) {
+          const idn = await getIdentity(id);
+          if (!idn) return sendResponse({ ok: false, error: "身份不存在: " + id, code: "NOT_FOUND" });
+          identities.push(idn);
+        }
+        const includeCurrent = !identities.length || !!message.includeCurrent;
+        const rows = [];
+        for (const idn of identities) {
+          const baseReqs = values.map((v) => applyRef(template, ref, v));
+          const reqs = baseReqs.map((x) => ({ ...x, identity: idn }));
+          const results = await replay_batch_with_identity(reqs, idn);
+          if (!Array.isArray(results)) return sendResponse({ ok: false, error: results?.error || "矩阵执行失败" });
+          rows.push({
+            identityId: idn.id, name: idn.name,
+            cells: results.map((x, i) => ({
+              value: values[i], status: x?.status ?? null, length: x?.body ? String(x.body).length : 0,
+              body: x?.body ? String(x.body).slice(0, 262144) : "",
+              headers: x?.responseHeaders || {}, request: baseReqs[i], error: x?.error || "",
+            })),
+          });
+        }
+        if (includeCurrent) {
+          const baseReqs = values.map((v) => applyRef(template, ref, v));
+          const results = await replay_batch_with_identity(baseReqs, null);
+          if (!Array.isArray(results)) return sendResponse({ ok: false, error: results?.error || "矩阵执行失败" });
+          rows.push({
+            identityId: "", name: "当前会话",
+            cells: results.map((x, i) => ({
+              value: values[i], status: x?.status ?? null, length: x?.body ? String(x.body).length : 0,
+              body: x?.body ? String(x.body).slice(0, 262144) : "",
+              headers: x?.responseHeaders || {}, request: baseReqs[i], error: x?.error || "",
+            })),
+          });
+        }
+        let baseline = rows.find((x) => x.identityId === (message.baselineIdentityId || "")) || rows[0];
+        for (const row of rows) {
+          row.cells.forEach((cell, i) => {
+            cell.verdict = classifyCell(cell, baseline ? baseline.cells[i] : null);
+            cell.baselineStatus = baseline ? baseline.cells[i]?.status : null;
+            cell.baselineLength = baseline ? baseline.cells[i]?.length : null;
+          });
+        }
+        sendResponse({ ok: true, values, ref, rows, baselineIdentityId: baseline ? baseline.identityId : "" });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;

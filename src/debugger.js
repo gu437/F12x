@@ -1759,6 +1759,17 @@ async function replayInner({ url, method = "GET", headers = {}, body = null, ide
   }
 }
 
+// 批量重放：同一身份只做一次 Cookie/storage 事务，矩阵用
+export async function replay_batch_with_identity(requests, identity = null) {
+  const run = async () => {
+    const out = [];
+    for (const req of (requests || [])) out.push(await replayInner(req));
+    return out;
+  };
+  if (identity) return withIdentityState(identity, run);
+  return run();
+}
+
 // ============================================================
 // 工具 10：highlight_element（对标 F12 Elements 悬停高亮）
 // Overlay.highlightNode——高亮页面元素（操作可视化）
