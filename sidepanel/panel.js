@@ -2829,14 +2829,18 @@ async function aiSendFromPage(text, titleHint = "页面分析", autoSend = true,
 async function pickConversationForAI({ text, titleHint = "页面分析", autoSend = true, projectId = "" }) {
   const r = await api("ai:conversations");
   const all = r.ok ? (r.conversations || []) : [];
-  const list = projectId ? all.filter((c) => (c.projectId || null) === projectId) : all;
+  const curPid = (app.currentProject && app.currentProject.id) || "";
+  const list = projectId
+    ? all.filter((c) => (c.projectId || null) === projectId)
+    : (curPid ? all.filter((c) => !c.projectId || c.projectId === curPid) : all);
   const pid = projectId || "";
+  const bindId = projectId || curPid || "";
   const pname = pid ? ((app.projects.find((x) => x.id === pid) || {}).name || "所选项目") : "";
   const opts = list.map((c) => `<option value="${esc(c.convId)}">${esc(c.title || "未命名")} · ${c.msgCount || 0} 条</option>`).join("");
   openModal(`<h3>送到哪个会话？</h3>
-    <div class="ai-pick-hint">${pid ? "该项目下" + list.length + " 个会话；也可新建（会绑定该项目）" : "选已有会话，或新建一条独立会话"}</div>
+    <div class="ai-pick-hint">${pid ? "该项目下" + list.length + " 个会话；也可新建（会绑定该项目）" : "选已有会话，或新建一条会话"}</div>
     <select id="ap-conv">
-      <option value="__new__">${pid ? "＋ 新建会话（绑定：" + esc(pname) + "）" : "＋ 新建会话（独立会话）"}</option>
+      <option value="__new__">${pid ? "＋ 新建会话（绑定：" + esc(pname) + "）" : "＋ 新建会话"}</option>
       ${opts}
     </select>
     <input id="ap-title" class="text-input hidden" placeholder="新会话标题（可选）" value="${esc(titleHint)}" />
@@ -2854,9 +2858,9 @@ async function pickConversationForAI({ text, titleHint = "页面分析", autoSen
     const title = ((titleEl && titleEl.value) || "").trim() || titleHint;
     closeModal();
     if (val === "__new__") {
-      const cr = await api("ai:conversation_create", { projectId: pid || null, title: title.substring(0, 40) });
+      const cr = await api("ai:conversation_create", { projectId: bindId || null, title: title.substring(0, 40) });
       if (!cr.ok) return toast("新建会话失败：" + (cr.error || ""));
-      await deliverToConversation({ convId: cr.conv.convId, title: cr.conv.title, projectId: pid || null, msgCount: 0, updatedAt: Date.now(), type: "task" }, text, send);
+      await deliverToConversation({ convId: cr.conv.convId, title: cr.conv.title, projectId: bindId || null, msgCount: 0, updatedAt: Date.now(), type: "task" }, text, send);
     } else {
       const c = list.find((x) => x.convId === val);
       if (!c) return toast("会话不存在");
@@ -3499,8 +3503,11 @@ async function renderAISessions() {
   pane.innerHTML = '<div class="placeholder">加载会话…</div>';
   const r = await api("ai:conversations");
   if (!r.ok) { pane.innerHTML = `<div class="placeholder">加载失败：${esc(r.error)}</div>`; return; }
-  const convs = (r.conversations || []).slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  if (!convs.length) { pane.innerHTML = '<div class="placeholder">暂无会话（AI 任务/聊天结束后自动记录在此）</div>'; return; }
+  const all = (r.conversations || []).slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  // 只显示当前项目的会话 + 独立会话；切换项目后列表随之变化（项目本身不在 AI 页出现）
+  const curPid = (app.currentProject && app.currentProject.id) || "";
+  const convs = curPid ? all.filter((c) => !c.projectId || c.projectId === curPid) : all;
+  if (!convs.length) { pane.innerHTML = `<div class="placeholder">${curPid ? "当前项目还没有会话（在下方输入即可新建）" : "暂无会话（AI 任务/聊天结束后自动记录在此）"}</div>`; return; }
   const itemHtml = (c) => `
     <div class="conv-item" data-id="${esc(c.convId)}">
       <div class="ci-head">
@@ -3565,7 +3572,9 @@ async function newConversationFlow() {
   const box = document.querySelector(".modal-box");
   box.querySelector(".modal-actions button").addEventListener("click", closeModal);
   box.querySelector("#nc-ok").addEventListener("click", async () => {
-    const r = await api("ai:conversation_create", { title: $("nc-title").value.trim() || undefined });
+    // AI 页新建的会话归属当前项目（界面不暴露项目，但换项目时列表要正确）
+    const pid = (app.currentProject && app.currentProject.id) || null;
+    const r = await api("ai:conversation_create", { title: $("nc-title").value.trim() || undefined, projectId: pid });
     closeModal();
     if (r.ok) {
       toast("已创建会话");
