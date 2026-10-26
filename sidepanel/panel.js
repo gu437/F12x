@@ -1407,9 +1407,14 @@ async function loadProjects(focusId) {
 function renderProjectSelector() {
   const sel = $("project-selector");
   if (!sel) return;
-  sel.innerHTML = (app.projects.length ? "" : '<option value="">项目：无</option>')
+  sel.innerHTML = (app.projects.length ? "" : '<option value="">未选项目</option>')
     + app.projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
   sel.value = (app.currentProject && app.currentProject.id) || "";
+  const pill = $("project-pill");
+  if (pill) {
+    pill.classList.toggle("empty", !(app.currentProject && app.currentProject.id));
+    pill.title = app.currentProject ? "当前项目：" + app.currentProject.name : "未选项目（在「项目」页创建或选择）";
+  }
 }
 function renderProjectList() {
   const box = $("project-list");
