@@ -27,6 +27,11 @@
 
 ## 未发布
 
+### 2026-10-26 · feat：AI 会话截图引用化（方案 001 / P5）
+- 改了什么：`screenshot` 不再写全局 5 张池，改为按会话 `shot:<convId>:<key>` + `shot_index:<convId>`（无数量上限）；AI 截图写入会话并记 `conv.shots`，模型只拿到引用 key；会话里渲染「📎 截图引用」，点击弹层看原图并可导出 PNG；删除会话级联删图。
+- 为什么：全局 5 张池既限制数量、又和会话无归属；按会话存引用后，图片不占对话上下文、可以无限留存、删会话即彻底清理。
+- 验证：`dev/run.mjs` 62/62（截图存储 / 无上限 / 级联删除用例 + L2 检查）；真实 UI：引用行可见、点击弹层出现图片、0 `pageerror`。手动截图路径未在真实页面手测（dataUrl 直出）。
+- 提交：`bb493b0`
 ### 2026-10-26 · feat：Issue 归入项目持久化（方案 001 / P4）
 - 改了什么：新增 `active_project_v1` 与 `ensureActiveProject()`（没有项目时自动建「默认项目」）；Issue 读写改走当前项目的 `project.issues`（`project:active` / `issue:list` / `issue:save` / `issue:delete`），面板不再直接读写 `f12x_issues_v1`；旧全局库一次性迁入「迁移项目（旧数据）」并留 `issues_backup_v1` 备份。
 - 为什么：Issue 是用户手工产出的结论，属于持久数据；按"持久数据全部落项目"的决策，不应再有独立的全局 Issue 库。
