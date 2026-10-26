@@ -38,6 +38,7 @@ import { saveBaseline, listBaselines, getBaseline, removeBaseline } from "./base
 import { exportBundle, importBundle } from "./bundle.js";
 import { buildReport } from "./report.js";
 import { saveSequence, listSequences, getSequence, removeSequence, applyVars, unresolvedVars, extractVar } from "./sequence.js";
+import { saveRequest, listRequests, getRequest, removeRequest, saveInventory, getInventory, requestVars } from "./assets.js";
 
 // 持久数据必须落在项目里：没有项目就明确报错（项目只在项目页创建）
 async function requireActiveProjectId(explicitId) {
@@ -506,6 +507,87 @@ export function handleMessage(message, sender, sendResponse) {
       try {
         const p = await ensureActiveProject();
         sendResponse({ ok: true, project: p ? { id: p.id, name: p.name } : null, issues: p ? (p.issues || []) : [] });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "request:list") {
+    (async () => {
+      try {
+        const pid = message.projectId || await requireActiveProjectId();
+        sendResponse({ ok: true, ...(await listRequests(pid || null)) });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "request:get") {
+    (async () => {
+      try {
+        const req = await getRequest(message.id);
+        if (!req) return sendResponse({ ok: false, error: "请求不存在", code: "NOT_FOUND" });
+        sendResponse({ ok: true, request: req, vars: requestVars(req.url + "\n" + req.body + "\n" + JSON.stringify(req.headers)) });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "request:save") {
+    (async () => {
+      try {
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目（请求资产必须归属项目）", code: "NOT_FOUND" });
+        const res = await saveRequest({ ...message, projectId: pid });
+        if (res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true, id: res.id, meta: res.meta });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "request:remove") {
+    (async () => {
+      try { await removeRequest(message.id); sendResponse({ ok: true }); }
+      catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "request:run") {
+    (async () => {
+      try {
+        const req = await getRequest(message.id);
+        if (!req) return sendResponse({ ok: false, error: "请求不存在", code: "NOT_FOUND" });
+        await debuggerAttach().catch(() => {});
+        const vars = { ...(message.variables || {}) };
+        const url = applyVars(req.url, vars);
+        const body = applyVars(req.body || "", vars);
+        const headers = {};
+        for (const [k, v] of Object.entries(req.headers || {})) headers[k] = applyVars(v, vars);
+        const idn = message.identityId ? await getIdentity(message.identityId) : null;
+        if (message.identityId && !idn) return sendResponse({ ok: false, error: "身份不存在", code: "NOT_FOUND" });
+        const res = await replay_request({ url, method: req.method, headers, body: req.body ? body : null, identity: idn });
+        sendResponse({ ok: !res.error, ...res, request: { url, method: req.method, headers, body } });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "inventory:refresh") {
+    (async () => {
+      try {
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先选择项目", code: "NOT_FOUND" });
+        await debuggerAttach().catch(() => {});
+        const r = await get_network_requests(null, 2000);
+        if (r.error) return sendResponse({ ok: false, error: r.error });
+        const res = await saveInventory(pid, r.items || []);
+        sendResponse({ ok: true, count: res.count, endpoints: res.endpoints });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "inventory:list") {
+    (async () => {
+      try {
+        const pid = message.projectId || await requireActiveProjectId();
+        if (!pid) return sendResponse({ ok: false, error: "请先选择项目", code: "NOT_FOUND" });
+        sendResponse({ ok: true, ...(await getInventory(pid)) });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;

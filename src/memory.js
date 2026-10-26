@@ -3,6 +3,7 @@ import { deleteProjectEvidence } from "./evidence.js";
 import { deleteProjectIdentities } from "./identity.js";
 import { deleteProjectSequences } from "./sequence.js";
 import { deleteProjectBaselines } from "./baseline.js";
+import { deleteProjectRequests } from "./assets.js";
 
 export const PROJECTS_KEY = "projects_v2"; // 旧：单键 map，仅用于迁移
 export const PROJECTS_INDEX_KEY = "projects_index_v2";
@@ -140,6 +141,7 @@ async function deleteProjectInner(projectId) {
   try { await deleteProjectIdentities(projectId); } catch (e) { /* 身份清理失败不阻断项目删除 */ }
   try { await deleteProjectSequences(projectId); } catch (e) { /* 序列清理失败不阻断项目删除 */ }
   try { await deleteProjectBaselines(projectId); } catch (e) { /* 基线清理失败不阻断项目删除 */ }
+  try { await deleteProjectRequests(projectId); } catch (e) { /* 请求资产/端点清理失败不阻断项目删除 */ }
   await chrome.storage.local.set({ [PROJECTS_INDEX_KEY]: index });
   await chrome.storage.local.remove(projectKey(projectId));
   // 解绑会话（分键布局：逐个改 projectId，不再依赖旧的全量数组）

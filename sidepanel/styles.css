@@ -1908,3 +1908,8 @@ body {
 /* 备份 / 报告（方案 009 / P6） */
 .bk-hint { font-size: 10.5px; color: var(--text-4); line-height: 1.5; margin: 6px 0; }
 #bk-file { width: 100%; font-size: 10px; margin: 4px 0; }
+
+/* 命令面板（方案 009 / P7） */
+.cmd-hit { border-bottom: 1px solid var(--surface-4); padding: 4px 0; }
+.cmd-hit-url { font-size: 10px; color: var(--text-3); word-break: break-all; }
+.cmd-hit-line { font-family: var(--mono); font-size: 10px; background: var(--surface-2); border-radius: 4px; padding: 2px 5px; margin: 2px 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

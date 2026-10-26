@@ -29,11 +29,9 @@
         <button class="nav-item active" data-view="page" title="页面"><span data-icon="file-text" data-size="18"></span><span class="nav-label">页面</span></button>
         <button class="nav-item" data-view="network" title="网络">
           <span class="nav-icon-wrap"><span data-icon="bar-chart-3" data-size="18"></span><span id="network-dot" class="nav-dot hidden"></span></span>
-          <span class="nav-label">网络</span>
+          <span class="nav-label">流量</span>
         </button>
-        <button class="nav-item" data-view="request" title="请求"><span data-icon="arrow-right" data-size="18"></span><span class="nav-label">请求</span></button>
-        <button class="nav-item" data-view="cookie" title="Cookie"><span data-icon="cookie" data-size="18"></span><span class="nav-label">Cookie</span></button>
-        <button class="nav-item" data-view="script" title="脚本"><span data-icon="code" data-size="18"></span><span class="nav-label">脚本</span></button>
+        <button class="nav-item" data-view="request" title="测试台"><span data-icon="arrow-right" data-size="18"></span><span class="nav-label">测试台</span></button>
         <button class="nav-item" data-view="project" title="项目"><span data-icon="folder-plus" data-size="18"></span><span class="nav-label">项目</span></button>
         <button class="nav-item" data-view="ai" title="AI 会话"><span data-icon="sparkles" data-size="18"></span><span class="nav-label">AI</span></button>
       </nav>
@@ -158,6 +156,7 @@
               <button id="rep-send" class="ctrl-btn primary"><span data-icon="send" data-size="12"></span> 发送</button>
               <button id="rep-matrix" class="mini-btn" title="身份 × 对象引用 授权矩阵">矩阵</button>
               <button id="rep-to-seq" class="mini-btn" title="把当前请求加入序列">加入序列</button>
+              <button id="rep-save-request" class="mini-btn" title="保存为项目请求资产">存请求</button>
             </div>
             <div class="rep-labels"><span>请求头（key: value 每行一个）</span></div>
             <textarea id="rep-headers" class="code-input" rows="3" placeholder="Cookie: a=b&#10;Content-Type: application/json"></textarea>
@@ -306,10 +305,14 @@
         <div class="tabs">
           <button class="tab active" data-ptab="facts">黑板</button>
           <button class="tab" data-ptab="evidence">证据</button>
+          <button class="tab" data-ptab="requests">请求</button>
           <button class="tab" data-ptab="issues">Issue</button>
           <button class="tab" data-ptab="sequences">序列</button>
           <button class="tab" data-ptab="templates">模板</button>
           <button class="tab" data-ptab="convs">会话</button>
+        </div>
+        <div id="proj-requests" class="proj-pane">
+          <div id="proj-requests-list"></div>
         </div>
         <div id="proj-evidence" class="proj-pane">
           <div id="proj-evidence-list"></div>

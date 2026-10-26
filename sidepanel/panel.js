@@ -848,6 +848,7 @@ function ensureDetailActions(item) {
   if (item) {
     actions.innerHTML = `
       <button class="mini-btn" data-st="copyurl" title="复制完整 URL">复制 URL</button>
+      <button class="mini-btn" data-st="cookie" title="复制当前目标全部 Cookie">复制 Cookie</button>
       <button class="mini-btn" data-st="evidence" title="把完整请求/响应存为项目证据">存证据</button>
       <button class="mini-btn" data-st="repeater">→ Repeater</button>
       <button class="mini-btn" data-st="intruder">→ Intruder</button>
@@ -858,6 +859,7 @@ function ensureDetailActions(item) {
       <button class="mini-btn" data-st="issue">→ Issue</button>`;
     actions.querySelector('[data-st="copyurl"]').addEventListener("click", () => copyText(item.url, "已复制 URL"));
     actions.querySelector('[data-st="evidence"]').addEventListener("click", () => saveNetworkEvidence(item));
+    actions.querySelector('[data-st="cookie"]').addEventListener("click", copyAllCookies);
     actions.querySelector('[data-st="repeater"]').addEventListener("click", () => sendToRepeater(item));
     actions.querySelector('[data-st="intruder"]').addEventListener("click", () => sendToIntruder(item));
     actions.querySelector('[data-st="decoder"]').addEventListener("click", () => sendToDecoder(item));
@@ -1624,6 +1626,132 @@ async function compareRepeaterBaseline() {
   run();
 }
 
+// ============================================================
+// ===== 请求资产 / 端点清单（方案 009 / P7） =====
+// ============================================================
+async function openSaveRequestDialog() {
+  const tpl = matrixTemplate();
+  if (!tpl.url) return toast("先填 URL");
+  const pid = seqProjectId();
+  if (!pid) return toast("请先选择项目");
+  openModal(`<h3>保存请求到项目</h3>
+    <label>名称</label><input id="rq-name" class="text-input" value="${esc((tpl.method || "GET") + " " + tpl.url).substring(0, 100)}" />
+    <div class="modal-actions"><button id="rq-cancel">取消</button><button id="rq-save" class="primary">保存</button></div>`);
+  const box = document.querySelector(".modal-box");
+  box.querySelector("#rq-cancel").addEventListener("click", closeModal);
+  box.querySelector("#rq-save").addEventListener("click", async () => {
+    const name = ($("rq-name").value || "").trim();
+    const r = await api("request:save", { projectId: pid, name, ...tpl });
+    if (!r.ok) return toast("保存失败：" + (r.error || ""));
+    closeModal();
+    toast("请求已保存");
+    if (app.projDetail) renderProjRequests(app.projDetail.project);
+  });
+}
+
+async function renderProjRequests(p) {
+  if (!p) return;
+  const [rq, inv] = await Promise.all([api("request:list", { projectId: p.id }), api("inventory:list", { projectId: p.id })]);
+  const rows = rq.ok ? (rq.requests || []) : [];
+  const eps = inv.ok ? (inv.endpoints || []) : [];
+  projPane("proj-requests-list", `
+    <div class="proj-actions"><button id="inv-refresh" class="mini-btn">刷新端点清单</button><span class="mini-label">${eps.length} 个端点</span></div>
+    <div class="ev-sec-title">保存的请求</div>
+    ${rows.length ? rows.map((x) => `<div class="ev-card">
+      <div class="ev-card-top"><span class="ev-card-title">${esc(x.name)}</span><span class="ev-card-status">${esc(x.method || "GET")}</span></div>
+      <div class="ev-card-meta">${esc(x.url)}</div>
+      <div class="ev-card-actions"><button class="mini-btn" data-rq-run="${esc(x.id)}">运行</button><button class="mini-btn danger" data-rq-del="${esc(x.id)}">删除</button></div>
+    </div>`).join("") : '<div class="placeholder">暂无保存请求：在 Repeater 点「存请求」</div>'}
+    <div class="ev-sec-title">端点清单</div>
+    ${eps.length ? `<div class="mx-table-wrap"><table class="mx-table"><thead><tr><th>方法</th><th>端点</th><th>次数</th><th>参数</th></tr></thead><tbody>${eps.slice(0, 200).map((e) => `<tr><td>${esc(e.method)}</td><td>${esc(e.pathKey)}</td><td>${e.count}</td><td>${esc((e.params || []).join(", "))}</td></tr>`).join("")}</tbody></table></div>` : '<div class="placeholder">刷新后从当前网络缓冲聚合（只记录观察到的）</div>'}`);
+  const box = $("proj-requests-list");
+  if (!box) return;
+  if ($("inv-refresh")) $("inv-refresh").addEventListener("click", async () => {
+    const rr = await api("inventory:refresh", { projectId: p.id });
+    if (!rr.ok) return toast("刷新失败：" + (rr.error || ""));
+    toast(`已聚合 ${rr.count} 个端点`);
+    renderProjRequests(p);
+  });
+  box.querySelectorAll("[data-rq-run]").forEach((b) => b.addEventListener("click", () => openRunRequestDialog(b.dataset.rqRun)));
+  box.querySelectorAll("[data-rq-del]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("删除该保存请求？")) return;
+    const rr = await api("request:remove", { id: b.dataset.rqDel });
+    if (!rr.ok) return toast("删除失败：" + (rr.error || ""));
+    renderProjRequests(p);
+  }));
+}
+
+async function openRunRequestDialog(id) {
+  const r = await api("request:get", { id });
+  if (!r.ok) return toast("读取失败：" + (r.error || ""));
+  const req = r.request;
+  const vars = r.vars || [];
+  const ids = await seqIdentityOptions("");
+  openModal(`<h3>运行请求</h3>
+    <div class="ev-card-meta">${esc(req.method)} ${esc(req.url)}</div>
+    ${vars.length ? vars.map((v) => `<label class="mini-label">${esc(v)}</label><input class="text-input" data-rqv="${esc(v)}" placeholder="{{${esc(v)}}}" />`).join("") : '<div class="mini-label">无变量</div>'}
+    <label class="mini-label">身份</label><select id="rq-identity" class="select-mini">${ids}</select>
+    <div id="rq-result"></div>
+    <div class="modal-actions"><button id="rq-run-close">关闭</button><button id="rq-run-ok" class="primary">运行</button></div>`);
+  const box = document.querySelector(".modal-box");
+  box.querySelector("#rq-run-close").addEventListener("click", closeModal);
+  box.querySelector("#rq-run-ok").addEventListener("click", async () => {
+    const vals = {};
+    box.querySelectorAll("[data-rqv]").forEach((el) => { vals[el.dataset.rqv] = el.value; });
+    const rr = await api("request:run", { id, variables: vals, identityId: $("rq-identity").value });
+    if (!rr.ok) { $("rq-result").innerHTML = `<div class="placeholder">${esc(rr.error || "失败")}</div>`; return; }
+    $("rq-result").innerHTML = `<div class="ev-sec-title">${esc(String(rr.status))} · ${(rr.body || "").length}B</div><pre class="ev-pre">${esc((rr.body || "").slice(0, 4000))}</pre><div class="proj-actions"><button id="rq-ev" class="mini-btn">存证据</button></div>`;
+    if ($("rq-ev")) $("rq-ev").addEventListener("click", () => evidenceSaveDialog({
+      kind: "request", source: "request", title: `${req.method} ${req.url}`,
+      request: rr.request || { method: req.method, url: req.url, headers: req.headers, body: req.body },
+      response: { status: rr.status, headers: rr.responseHeaders || {}, body: rr.body || "" },
+    }));
+  });
+}
+
+// ============================================================
+// ===== 命令面板（Ctrl/Cmd+K）：JS 源码搜索 / 降级入口 =====
+// ============================================================
+async function copyAllCookies() {
+  const r = await api("tool:cookies", { includeValues: true });
+  if (!r.ok) return toast("读取 Cookie 失败：" + (r.error || ""));
+  const cookies = r.cookies || [];
+  if (!cookies.length) return toast("当前目标无 Cookie");
+  copyText(cookies.map((c) => `${c.name}=${c.value}`).join("; "), "已复制全部 Cookie");
+}
+
+function openCommandPalette() {
+  openModal(`<h3>命令</h3>
+    <input id="cmd-q" class="text-input" placeholder="输入 JS 源码关键词，回车搜索…" />
+    <div class="proj-actions">
+      <button id="cmd-cookie" class="mini-btn">复制全部 Cookie</button>
+      <button id="cmd-cookie-view" class="mini-btn">打开 Cookie 视图</button>
+      <button id="cmd-script-view" class="mini-btn">打开脚本视图</button>
+    </div>
+    <div id="cmd-results"></div>
+    <div class="modal-actions"><button id="cmd-close" class="primary">关闭</button></div>`);
+  const box = document.querySelector(".modal-box");
+  box.querySelector("#cmd-close").addEventListener("click", closeModal);
+  box.querySelector("#cmd-cookie").addEventListener("click", copyAllCookies);
+  box.querySelector("#cmd-cookie-view").addEventListener("click", () => { closeModal(); switchView("cookie"); });
+  box.querySelector("#cmd-script-view").addEventListener("click", () => { closeModal(); switchView("script"); });
+  const search = async () => {
+    const q = ($("cmd-q").value || "").trim();
+    if (!q) return;
+    $("cmd-results").innerHTML = '<div class="placeholder">搜索中…</div>';
+    const r = await api("tool:script_search", { query: q, limitPerScript: 10, maxScripts: 300 });
+    if (!r.ok) { $("cmd-results").innerHTML = `<div class="placeholder">${esc(r.error || "失败")}</div>`; return; }
+    const results = r.results || [];
+    $("cmd-results").innerHTML = results.length ? results.slice(0, 30).map((x) => `
+      <div class="cmd-hit">
+        <div class="cmd-hit-url">${esc(x.url || x.scriptId || "")}</div>
+        ${(x.matches || x.hits || []).slice(0, 3).map((m) => `<div class="cmd-hit-line" data-cmd-copy="${esc(m.context ? m.context.join("\\n") : (m.line || ""))}">${esc(m.context ? m.context[0] : (m.line || ""))}</div>`).join("")}
+      </div>`).join("") : '<div class="placeholder">无命中</div>';
+    box.querySelectorAll("[data-cmd-copy]").forEach((el) => el.addEventListener("click", () => { copyText(el.dataset.cmdCopy, "已复制命中片段"); }));
+  };
+  $("cmd-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); search(); } });
+}
+
 function initRequestModule() {
   document.querySelectorAll('#view-request .tabs .tab').forEach(t => {
     t.addEventListener("click", () => {
@@ -1638,6 +1766,7 @@ function initRequestModule() {
   if ($("rep-identity-manage")) $("rep-identity-manage").addEventListener("click", openIdentityManager);
   if ($("rep-matrix")) $("rep-matrix").addEventListener("click", openMatrixDialog);
   if ($("rep-to-seq")) $("rep-to-seq").addEventListener("click", addToSequenceDialog);
+  if ($("rep-save-request")) $("rep-save-request").addEventListener("click", openSaveRequestDialog);
   if ($("rep-baseline")) $("rep-baseline").addEventListener("click", saveRepeaterBaseline);
   if ($("rep-baseline-cmp")) $("rep-baseline-cmp").addEventListener("click", compareRepeaterBaseline);
   refreshIdentitySelect().catch(() => {});
@@ -1815,12 +1944,35 @@ async function intruderRun() {
   if (!r.ok) { $("int-summary").textContent = "失败：" + r.error; return; }
   const head = r.interrupted ? `已中断（发出 ${r.returned}/${r.total}）` : `完成 ${r.returned}/${r.total}`;
   $("int-summary").textContent = `${head} · 状态分组：${JSON.stringify(r.statusGroups)} · 长度分组：${JSON.stringify(r.lenGroups)}`;
-  const rows = r.results.map(x => {
-    const anomaly = x.status === 500 || x.error ? " anomaly" : "";
-    return `<tr class="${anomaly}"><td>${x.index}</td><td>${esc(x.payload)}</td><td>${x.status ?? "ERR"}</td><td>${x.length}</td><td>${esc(x.error || (x.body ? x.body.substring(0, 60) : ""))}</td></tr>`;
-  }).join("");
-  $("int-results").innerHTML = `<table class="int-table"><thead><tr><th>#</th><th>payload</th><th>状态</th><th>长度</th><th>备注</th></tr></thead><tbody>${rows}</tbody></table>`;
+  app.intrLast = r;
+  renderIntrResults("anomaly");
 }
+
+function renderIntrResults(sort = "anomaly") {
+  const r = app.intrLast;
+  if (!r || !r.results) return;
+  const results = r.results.slice();
+  const statusMode = Object.entries(r.statusGroups || {}).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const lenMode = Object.entries(r.lenGroups || {}).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const isAnom = (x) => !!x.error || String(x.status) !== String(statusMode) || String(x.length) !== String(lenMode);
+  if (sort === "status") results.sort((a, b) => String(a.status).localeCompare(String(b.status)));
+  else if (sort === "length") results.sort((a, b) => (a.length || 0) - (b.length || 0));
+  else results.sort((a, b) => Number(isAnom(b)) - Number(isAnom(a)));
+  const rows = results.map((x) => {
+    const anomaly = isAnom(x) ? " anomaly" : "";
+    return `<tr class="int-row${anomaly}" data-int-row="${x.index}"><td>${x.index}</td><td>${esc(x.payload)}</td><td>${x.status ?? "ERR"}</td><td>${x.length}</td><td>${esc(x.error || (x.body ? x.body.substring(0, 60) : ""))}</td></tr>`;
+  }).join("");
+  $("int-results").innerHTML = `<div class="proj-actions"><button class="mini-btn" data-int-sort="anomaly">异常优先</button><button class="mini-btn" data-int-sort="status">按状态</button><button class="mini-btn" data-int-sort="length">按长度</button><span class="mini-label">异常 ${results.filter(isAnom).length}/${results.length}</span></div>
+    <table class="int-table"><thead><tr><th>#</th><th>payload</th><th>状态</th><th>长度</th><th>备注</th></tr></thead><tbody>${rows}</tbody></table>
+    <pre id="int-detail" class="ev-pre" style="margin-top:6px"></pre>`;
+  document.querySelectorAll("[data-int-sort]").forEach((b) => b.addEventListener("click", () => renderIntrResults(b.dataset.intSort)));
+  document.querySelectorAll("[data-int-row]").forEach((tr) => tr.addEventListener("click", () => {
+    const x = r.results.find((y) => String(y.index) === tr.dataset.intRow);
+    const d = $("int-detail");
+    if (d && x) d.textContent = `payload: ${x.payload}\nstatus: ${x.status ?? "ERR"}\nlength: ${x.length}\n\n${x.body || x.error || ""}`;
+  }));
+}
+
 
 async function cmpRun() {
   const a = $("cmp-a").value, b = $("cmp-b").value;
@@ -2437,6 +2589,7 @@ async function openProjectDetail(id) {
   renderProjIssues(p);
   renderProjTemplates(p);
   renderProjSequences(p);
+  renderProjRequests(p);
   renderProjEvidence(p);
   renderProjConvs(r.conversations);
   renderProjectList();
@@ -5023,6 +5176,12 @@ function init() {
   });
   // 面板内快捷键（方案九.3：sidePanel 聚焦时生效）
   // Alt+I Inspect / Alt+P AI 暂停-继续 / Alt+R Repeater 发送 / Alt+X 拦截开关
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && String(e.key || "").toLowerCase() === "k") {
+      e.preventDefault();
+      openCommandPalette();
+    }
+  });
   document.addEventListener("keydown", async (e) => {
     if (!e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.target && /^(input|textarea|select)$/i.test(e.target.tagName)) {
