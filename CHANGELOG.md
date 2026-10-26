@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · feat：P7 收尾（5 项导航 / 请求资产 / 端点清单 / 分诊）
+- 改了什么：导航收敛为 `页面 / 流量 / 测试台 / 项目 / AI`；Cookie/脚本降级到 `Ctrl/Cmd+K` 命令面板（JS 源码搜索、复制全部 Cookie、打开视图），网络详情增加「复制 Cookie」；新增 `src/assets.js`（项目请求资产 CRUD、`{{变量}}`、端点清单聚合）；router 增加 `request:*`、`inventory:*`；项目新增「请求」页签（运行/变量/身份/存证据/刷新端点）；Intruder 支持异常优先/状态/长度排序、异常计数、点击行看响应。
+- 为什么：一级导航只保留高频面；请求资产让一次性流量可复用；端点清单提供 API 资产视角；Intruder 需要从“跑完”到“能看异常”。
+- 验证：`dev/run.mjs` 107/107；UI 导航 5 项、Ctrl+K 打开、保存请求后项目运行 `200 · 39B`、Intruder 3 行异常 1；0 `pageerror`。
+- 提交：`878878f`
+
 ### 2026-10-27 · feat：项目备份导入与脱敏报告（方案 009 / P6）
 - 改了什么：新增 `src/bundle.js`（导出项目+证据+序列+基线，身份可选；导入重名追加、证据/身份 id 重映射、Issue `evidenceIds` 重映射、失败删除新项目回滚）与 `src/report.js`（HTML 单文件/Markdown，内嵌 Issue 与证据请求/响应/差异，默认脱敏 Cookie/Set-Cookie/Authorization、JWT、Bearer、邮箱、手机、内网 IP、敏感查询参数）；router 增加 `bundle:export/import`、`report:build`；项目页增加「备份/导入」「报告」。
 - 为什么：持久容器不能只出不进；交付物需要可读、可复现且可安全分享的报告，默认脱敏避免二次泄漏。
