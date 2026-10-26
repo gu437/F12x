@@ -355,6 +355,26 @@ export async function removeAIFinding(key, projectId) {
   return { ok: true };
 }
 
+// === 会话截图（方案 001 / P5）：按会话存储、无数量上限、删会话级联 ===
+const shotKey = (convId, key) => `shot:${convId}:${key}`;
+const shotIndexKey = (convId) => `shot_index:${convId}`;
+
+export async function saveShot(convId, key, dataUrl) {
+  if (!convId || !key || !dataUrl) return;
+  await chrome.storage.local.set({ [shotKey(convId, key)]: dataUrl });
+  const r = await chrome.storage.local.get(shotIndexKey(convId));
+  const list = Array.isArray(r[shotIndexKey(convId)]) ? r[shotIndexKey(convId)] : [];
+  if (!list.includes(key)) list.push(key);
+  await chrome.storage.local.set({ [shotIndexKey(convId)]: list });
+}
+
+export async function deleteShots(convId) {
+  const r = await chrome.storage.local.get(shotIndexKey(convId));
+  const list = Array.isArray(r[shotIndexKey(convId)]) ? r[shotIndexKey(convId)] : [];
+  const drop = list.map((k) => shotKey(convId, k)).concat([shotIndexKey(convId)]);
+  if (drop.length) await chrome.storage.local.remove(drop);
+}
+
 // === 会话（独立对话，可关联项目） ===
 // 存储布局（性能修复）：索引 + 每会话一键。
 //   旧：conversations_v2 = 全量数组 —— 每次保存重写所有会话（agent 每 700ms flush 一次），
@@ -512,6 +532,7 @@ async function deleteConversationInner(convId) {
   const drop = [convKey(convId), spillIndexKey(convId), `workspace:${convId}`]
     .concat(spillKeys.map((k) => spillKey(convId, k)));
   await chrome.storage.local.remove(drop);
+  await deleteShots(convId); // 方案 001 / P5：会话截图级联删除
 }
 
 export async function getActiveConversation() {

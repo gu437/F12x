@@ -13,7 +13,7 @@ import {
 import { normalizeEndpoint } from "./llm.js";
 import {
   upsertFact, getFact, publishToBlackboard, appendWorkspaceEntry, updateWorkspaceEntry, getWorkspace,
-  getRoleSkills, saveConversation, AI_PROJECT_ID, spillKey, recordSpillKey
+  getRoleSkills, saveConversation, saveShot, AI_PROJECT_ID, spillKey, recordSpillKey
 } from "./memory.js";
 import { normalizeError, normalizeToolResult, F12X_ERROR_CODES } from "./errors.js";
 import { runReviewAudit, TOOL_NAMES_CN } from "./experts.js";
@@ -255,10 +255,28 @@ async function executeToolInner(name, args, signal = null) {
     case "highlight_element":
       return await highlight_element(args);
     case "screenshot": {
-      // 功能残缺 P0-3：截图保存后推送 shot_captured 事件——panel 对话流内联渲染
+      // 方案 001 / P5：图片按会话存 shot:<convId>:<key>，会话里只留引用；模型只拿 key，不拿 base64
       const shotRes = await screenshot(args || {});
       if (shotRes?.ok && shotRes.key) {
-        pushStatus({ type: "shot_captured", key: shotRes.key, size: shotRes.size, ts: Date.now() });
+        const conv = taskState.conv;
+        const convId = conv?.convId || "";
+        if (convId && shotRes.dataUrl) {
+          try {
+            await saveShot(convId, shotRes.key, shotRes.dataUrl);
+            conv.shots = Array.isArray(conv.shots) ? conv.shots : [];
+            conv.shots.push({ key: shotRes.key, at: Date.now() });
+            await saveConversation(conv);
+          } catch (e) { console.warn("[Shot] 保存失败:", e.message); }
+        }
+        pushStatus({ type: "shot_captured", key: shotRes.key, convId, size: shotRes.size, ts: Date.now() });
+        return {
+          ok: true,
+          data: {
+            shot: shotRes.key,
+            size: shotRes.size,
+            note: "截图已存为该会话的引用（面板可点开查看）。不要重复截图，用引用 key 向用户说明即可。",
+          },
+        };
       }
       return shotRes;
     }

@@ -52,7 +52,7 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 - **会话工作区**：`workspace:{convId}`，记录研讨条目（发现 open/confirmed/overruled、疑问 open/resolved、决策 executing/done）；带证据的发现会自动沉淀黑板；**任务结束即清理**，过程不长期保存。
 - **审计**：AI 的动作逐条留痕（工具调用 / 结果 / 审查事件），状态条可展开查看实时动作审计；会话审计随会话持久化（上限 200 条），可在「会话记录 → 审计」回看。
 - **轨迹**：把一次 AI 执行渲染为 archify **workflow 引擎**的执行流程（4 条泳道：UI / Agent Runtime / Policy & Recovery / Tool Execution，标注节点与边数量）；CSP 下以 iframe `srcdoc` 展示静态 SVG，支持滚轮缩放、拖拽平移、双击复位；「打开完整工件」下载 `f12x-trace.html` 获得官方交互查看器。
-- **截图**：`shot_*` 键，保留最近 5 张，图片只供人查看、不进入 LLM 上下文（`screenshot` 定位为取证）。
+- **截图**：手动截图不落库（弹层直接查看 / 导出 PNG）；AI 任务截图按会话存 `shot:<convId>:<key>`，会话里**只显示引用标记**、点击弹层看原图，**不限数量**，删会话级联删除；图片不进入 LLM 上下文（只把引用 key 给模型）。
 
 ## AI 会话工作台
 
@@ -108,9 +108,9 @@ AI 任务专用（不可手动直调）：`upsert_fact` `get_fact` `rebuttal_che
 | LLM | `llmConfig`（引擎唯一读取点）、`llm_endpoints`、`f12x_models_v1`（模型条目）、`f12x_model_active`（默认模型 id）；旧版独立键 `llm_api_key` / `llm_base_url` / `llm_model` 仍兼容 |
 | 行为 | `approvalLevel`（`read_auto_write_approve` 默认 / `full_auto` / `all_approve`）、`f12x_thinking_limit`（思考字符上限，0=不限）、`f12x_context_window`（压缩窗口）、`f12x_guard_profile`（auto / lite / full）、`f12x_local_warm`（本地空闲保活）、`f12x_ai_mode`·`f12x_ai_nothink`（localStorage，会话 UI 记忆） |
 | 数据 | `projects_index_v2`（项目索引）、`project:<id>`（项目：黑板 / Issue / 模板）、`active_project_v1`、`conversations_index_v2`（会话元数据索引）、`conv:<convId>`（单会话全文）、`active_conv_v2`、`skills_data`、`f12x_repeater_history_v1`、`f12x_pending_approval_v1`、`f12x_intercept_snapshot_v1`、`shots_index_v1`（截图索引） |
-| 会话级 | `workspace:{convId}`、`spill:{convId}:{key}` + `spill_index:{convId}`、`shot_*`（截图） |
+| 会话级 | `workspace:{convId}`、`spill:{convId}:{key}` + `spill_index:{convId}`、`shot:<convId>:<key>` + `shot_index:<convId>`（会话截图，无上限） |
 
-淘汰与上限：会话 100 个（保留活跃会话）、单会话消息 400 条、`events` 500 条、黑板事实 500 条 / 项目、工作区条目 2000 条、审计 200 条、网络 2000 条、控制台 200 条、截图 5 张、溢出区 30 条 / 会话。旧版全量数组 `conversations_v2` 会在扩展启动时**自动迁移**为「索引 + 每会话一键」。
+淘汰与上限：会话 100 个（保留活跃会话）、单会话消息 400 条、`events` 500 条、黑板事实 500 条 / 项目、工作区条目 2000 条、审计 200 条、网络 2000 条、控制台 200 条、溢出区 30 条 / 会话（**截图不设上限**，随会话删除）。旧版全量数组 `conversations_v2` 会在扩展启动时**自动迁移**为「索引 + 每会话一键」。
 
 ## 运行限制与容量
 

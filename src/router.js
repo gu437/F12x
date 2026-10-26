@@ -612,6 +612,7 @@ export function handleMessage(message, sender, sendResponse) {
             plan: Array.isArray(full.plan) ? full.plan : [],
             audit: Array.isArray(full.audit) ? full.audit : [],
             events: Array.isArray(full.events) ? full.events : [],
+            shots: Array.isArray(full.shots) ? full.shots : [], // 方案 001 / P5：截图引用（图片本体在 shot:<convId>:<key>）
             checkpoint: full.checkpoint ? {
               at: full.checkpoint.at, lastStepDesc: full.checkpoint.lastStepDesc || "",
               goal: full.checkpoint.goal || ""

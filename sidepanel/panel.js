@@ -483,10 +483,18 @@ async function runFormRecon() {
 async function runShot(fullPage) {
   const r = await api("tool:screenshot", { fullPage });
   if (!r.ok) return toast("截图失败：" + r.error);
-  const data = await new Promise((res) => chrome.storage.local.get(r.key, (v) => res(v[r.key])));
-  if (!data) return toast("截图无数据");
-  openModal(`<h3>截图（${r.size}）</h3><img src="data:image/png;base64,${data}" style="max-width:100%" alt="截图"/><div class="modal-actions"><button>关闭</button></div>`);
-  document.querySelector(".modal-box .modal-actions button").addEventListener("click", closeModal);
+  if (!r.dataUrl) return toast("截图无数据");
+  openModal(`<h3>截图（${esc(String(r.size || ""))}）</h3><img src="${r.dataUrl}" style="max-width:100%" alt="截图"/>`
+    + '<div class="modal-actions"><button id="shot-download" class="mini-btn">导出 PNG</button><button>关闭</button></div>');
+  const mb = document.querySelector(".modal-box");
+  if (!mb) return;
+  const dl = mb.querySelector("#shot-download");
+  if (dl) dl.addEventListener("click", () => {
+    const a = document.createElement("a");
+    a.href = r.dataUrl; a.download = "f12x-shot-" + Date.now() + ".png";
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+  mb.querySelector(".modal-actions button:last-child").addEventListener("click", closeModal);
 }
 
 async function runNavigate() {
@@ -1906,6 +1914,36 @@ function chatFlowLine(cls, html) {
   chatScrollSoft();
   return d;
 }
+// 截图引用（方案 001 / P5）：会话里只显示引用标记，点击弹层看原图；不限制数量
+function chatShotRef(key, convId, size) {
+  const k = String(key || "");
+  if (!k) return null;
+  const cid = String(convId || (chatUI && chatUI.convId) || "");
+  const el = chatFlowLine("ok", '📎 截图引用 <code>' + esc(k) + '</code>'
+    + (size ? ' <span class="shot-size">' + esc(String(size)) + '</span>' : '')
+    + ' <button class="mini-btn shot-open">查看</button>');
+  if (!el) return null;
+  const btn = el.querySelector(".shot-open");
+  if (btn) btn.addEventListener("click", async (ev) => {
+    ev.stopPropagation();
+    const storageKey = "shot:" + cid + ":" + k;
+    const got = await chrome.storage.local.get(storageKey);
+    const dataUrl = got[storageKey];
+    if (!dataUrl) return toast("截图引用已失效（会话可能已删除）");
+    openModal(`<h3>截图引用 <code>${esc(k)}</code></h3><img src="${dataUrl}" style="max-width:100%" alt="截图"/>`
+      + '<div class="modal-actions"><button id="shot-download" class="mini-btn">导出 PNG</button><button>关闭</button></div>');
+    const mb = document.querySelector(".modal-box");
+    if (!mb) return;
+    const dl = mb.querySelector("#shot-download");
+    if (dl) dl.addEventListener("click", () => {
+      const a = document.createElement("a");
+      a.href = dataUrl; a.download = "f12x-" + k + ".png";
+      document.body.appendChild(a); a.click(); a.remove();
+    });
+    mb.querySelector(".modal-actions button:last-child").addEventListener("click", closeModal);
+  });
+  return el;
+}
 // 研讨条目实时可见：executor 的 workspace_note → pushStatus({type:"workspace"})，原先无消费者
 function chatWorkspaceNote(entry) {
   if (!entry) return;
@@ -2413,6 +2451,9 @@ function renderChatHistory() {
     }
     // 其他 role 忽略（system/内部注入已在过滤器剔除）
   }
+  // 截图引用（方案 001 / P5）：历史会话按 refs 渲染，图片本体在 shot:<convId>:<key>
+  const shotRefs = Array.isArray(aiDetailConv && aiDetailConv.shots) ? aiDetailConv.shots : [];
+  for (const s of shotRefs) if (s && s.key) chatShotRef(s.key, aiDetailConv.convId, s.size);
   pnRebuildFromDom(); // 按当前消息流重建右侧 Prompt 导航（历史会话可重建）
   chatScroll();
 }
@@ -2695,17 +2736,7 @@ function chatOnStatus(st) {
   if (t === "ai:tool_timeout") { chatFlowLine("warn", "⏱ 工具 " + escapeHtml(String(st.tool || "")) + " 超时"); return; }
   if (t === "ai:repeat_tool_notice") { chatFlowLine("warn", "⚠ 已连续 " + (st.count || 3) + " 次重复调用 " + escapeHtml(String(st.tool || "")) + "（已提醒模型）"); return; }
   if (t === "shot_captured") {
-    const k = String(st.key || "");
-    const el = chatFlowLine("ok", '📸 取证快照已保存（留证用）' + (k ? ' <button class="mini-btn shot-open" data-key="' + escapeHtml(k) + '">查看截图</button>' : ""));
-    if (k) el.querySelector(".shot-open").addEventListener("click", async (ev) => {
-      ev.stopPropagation();
-      const got = await chrome.storage.local.get(k);
-      const data = got[k];
-      if (!data) return toast("截图已过期（仅保留最近 5 张）");
-      openModal(`<h3>截图${st.size ? "（" + escapeHtml(String(st.size)) + "）" : ""}</h3><img src="data:image/png;base64,${data}" style="max-width:100%" alt="截图"/><div class="modal-actions"><button>关闭</button></div>`);
-      const mb = document.querySelector(".modal-box");
-      if (mb) mb.querySelector(".modal-actions button").addEventListener("click", closeModal);
-    });
+    chatShotRef(st.key, st.convId, st.size);
     return;
   }
   if (t === "running" || t === "thinking") {
