@@ -177,7 +177,7 @@ const app = {
     filter: { url: "", method: "", status: "", domain: "", type: "" }, sort: null, sortDir: 1,
     searchIds: null, // 元数据搜索命中的 id 集（network:metadata_search 结果）
     page: 1, pageSize: 50, // 14.2 定稿：表格分页 50/页
-    columns: ["method", "status", "url", "type", "size", "src"], // 列配置（默认集）
+    columns: ["method", "status", "url"], // 默认只看标识列；类型/大小/来源在详情「常规」
     consoleLogs: []
   },
   rep: { lastResponse: null, history: [], prevBody: "" },
@@ -642,10 +642,14 @@ function initNetworkModule() {
   });
   // 列配置（持久化 networkColumns）
   chrome.storage.local.get({ networkColumns: null }, (cfg) => {
-    if (Array.isArray(cfg.networkColumns) && cfg.networkColumns.length) {
-      app.network.columns = cfg.networkColumns;
-      document.querySelectorAll("#net-cols-menu input[data-col]").forEach(c => { c.checked = app.network.columns.includes(c.dataset.col); });
+    const OLD_DEFAULT = ["method", "status", "url", "type", "size", "src"];
+    const NEW_DEFAULT = ["method", "status", "url"];
+    const saved = Array.isArray(cfg.networkColumns) ? cfg.networkColumns : null;
+    if (saved && saved.length) {
+      const isOldDefault = saved.length === OLD_DEFAULT.length && OLD_DEFAULT.every((k, i) => saved[i] === k);
+      app.network.columns = isOldDefault ? NEW_DEFAULT : saved;
     }
+    document.querySelectorAll("#net-cols-menu input[data-col]").forEach(c => { c.checked = app.network.columns.includes(c.dataset.col); });
   });
   $("net-cols-btn").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -810,14 +814,26 @@ function ensureDetailActions(item) {
     actions.className = "net-detail-actions";
     $("net-detail-tabs").parentNode.insertBefore(actions, $("net-detail-tabs"));
   }
-  let urlBar = document.querySelector("#net-detail .net-detail-url");
-  if (!urlBar) {
-    urlBar = document.createElement("div");
-    urlBar.className = "net-detail-url";
-    urlBar.title = "完整 URL（可选中复制）";
-    $("net-detail-tabs").parentNode.insertBefore(urlBar, actions);
+  let general = document.querySelector("#net-detail .net-detail-general");
+  if (!general) {
+    general = document.createElement("div");
+    general.className = "net-detail-general";
+    $("net-detail-tabs").parentNode.insertBefore(general, $("net-detail-tabs"));
   }
-  urlBar.textContent = item ? (item.url || "") : "";
+  const ndg = (k, v, cls) => `<div class="ndg-row"><span class="ndg-k">${k}</span><span class="ndg-v ${cls || ""}">${v}</span></div>`;
+  if (item) {
+    const st = item.status;
+    general.innerHTML = `<div class="ndg-row"><span class="ndg-k">请求网址</span><span class="ndg-v ndg-url">${esc(item.url || "")}</span><button class="mini-btn" data-ndg="copy" title="复制完整 URL">复制</button></div>`
+      + ndg("请求方法", esc(item.method || "-"))
+      + ndg("状态代码", st ? `<span class="ndg-st ${st >= 200 && st < 300 ? "ok" : st >= 400 ? "err" : ""}">${esc(String(st))}</span>` : "-")
+      + ndg("类型", esc(item.type || "-"))
+      + ndg("大小", esc(item.size != null ? String(item.size) + " B" : "-"))
+      + ndg("来源", esc(item.source || "page") + (item.intercepted ? " ⚡" : ""));
+    const cp = general.querySelector('[data-ndg="copy"]');
+    if (cp) cp.addEventListener("click", () => copyText(item.url, "已复制 URL"));
+  } else {
+    general.innerHTML = "";
+  }
   if (item) {
     actions.innerHTML = `
       <button class="mini-btn" data-st="copyurl" title="复制完整 URL">复制 URL</button>
@@ -1373,46 +1389,72 @@ function maskVal(v) {
   return v.substring(0, 4) + "****";
 }
 
+let cookieSelected = ""; // domain|name
+
+function cookieKey(c) { return String(c.domain || "") + "|" + String(c.name || ""); }
+
 function renderCookies() {
   const showValues = !!$("cookie-show-values").checked;
   const f = $("cookie-filter").value.toLowerCase();
   const items = cookieData.filter(c => !f || (c.name + c.domain).toLowerCase().includes(f));
   const wrap = $("cookie-table-wrap");
-  wrap.innerHTML = `<table class="cookie-table"><thead><tr><th>名称</th><th>值</th><th>域</th><th>路径</th><th>标志</th><th>操作</th></tr></thead><tbody>
-    ${items.map(c => `<tr>
-      <td>${esc(c.name)}</td>
-      <td class="val cookie-val${showValues ? " val-full" : ""}" data-full="${esc(c.value ?? "")}" title="${showValues ? "点击复制完整值" : "点击复制完整值（当前掩码显示）"}">${esc(showValues ? (c.value || "") : maskVal(c.value))}</td>
-      <td>${esc(c.domain)}</td>
-      <td>${esc(c.path)}</td>
-      <td>${c.httpOnly ? "H" : ""}${c.secure ? "S" : ""}${c.sameSite ? "·" + esc(c.sameSite) : ""}</td>
-      <td>
-        <button class="mini-btn" data-copy="${esc(c.name)}" title="复制完整值">复制</button>
-        <button class="mini-btn" data-edit="${esc(c.name)}">编辑</button>
-        <button class="mini-btn" data-del="${esc(c.name)}">删除</button>
-      </td>
-    </tr>`).join("") || '<tr><td colspan="6"><div class="placeholder">无 Cookie</div></td></tr>'}
-  </tbody></table>`;
-  wrap.querySelectorAll('[data-edit]').forEach(b => b.addEventListener("click", () => {
-    const c = cookieData.find(x => x.name === b.dataset.edit);
-    if (c) editCookie(c);
+  const detail = $("cookie-detail");
+  if (!items.length) {
+    wrap.innerHTML = '<div class="placeholder">无 Cookie</div>';
+    if (detail) { detail.classList.add("hidden"); detail.innerHTML = ""; }
+    return;
+  }
+  if (!items.some(c => cookieKey(c) === cookieSelected)) cookieSelected = cookieKey(items[0]);
+  wrap.innerHTML = items.map(c => {
+    const key = cookieKey(c);
+    const flags = [c.httpOnly ? "H" : "", c.secure ? "S" : "", c.sameSite ? "·" + c.sameSite : ""].join("");
+    return `<div class="cookie-row ${key === cookieSelected ? "active" : ""}" data-key="${esc(key)}">
+      <div class="cr-main"><span class="cr-name">${esc(c.name)}</span><span class="cr-domain">${esc(c.domain)}</span></div>
+      <span class="cr-flags">${esc(flags)}</span>
+    </div>`;
+  }).join("");
+  wrap.querySelectorAll(".cookie-row").forEach(el => el.addEventListener("click", () => {
+    cookieSelected = el.dataset.key;
+    wrap.querySelectorAll(".cookie-row").forEach(x => x.classList.toggle("active", x.dataset.key === cookieSelected));
+    renderCookieDetail();
   }));
-  // 点击值复制（掩码与否都可复制真实值）
-  wrap.querySelectorAll(".cookie-val").forEach(el => {
-    el.title = "点击复制完整值";
-    el.addEventListener("click", () => copyText(el.dataset.full || "", "已复制 Cookie 值"));
-  });
-  wrap.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", () => {
-    const c = cookieData.find(x => x.name === b.dataset.copy);
-    if (c) copyText(c.value || "", "已复制 Cookie「" + c.name + "」");
-  }));
-  wrap.querySelectorAll('[data-del]').forEach(b => b.addEventListener("click", async () => {
-    const c = cookieData.find(x => x.name === b.dataset.del);
-    if (!c) return;
-    const url = "https://" + c.domain.replace(/^\./, "") + c.path;
-    const r = await api("cookie:remove", { cookie: { name: c.name, url } });
-    toast(r.ok ? "已删除" : "删除失败：" + r.error);
-    if (r.ok) loadCookies();
-  }));
+  renderCookieDetail();
+}
+
+function renderCookieDetail() {
+  const d = $("cookie-detail");
+  if (!d) return;
+  const showValues = !!$("cookie-show-values").checked;
+  const c = cookieData.find(x => cookieKey(x) === cookieSelected);
+  if (!c) { d.classList.add("hidden"); d.innerHTML = ""; return; }
+  const val = c.value || "";
+  const shown = showValues ? val : maskVal(val);
+  const flags = [c.httpOnly ? "HttpOnly" : "", c.secure ? "Secure" : "", c.sameSite ? "SameSite=" + c.sameSite : ""].filter(Boolean).join(" · ") || "—";
+  d.classList.remove("hidden");
+  d.innerHTML = `<div class="cd-head"><span class="cd-title">${esc(c.name)}</span>
+      <span class="cd-actions">
+        <button class="mini-btn" data-cd="copyval">复制值</button>
+        <button class="mini-btn" data-cd="copyline">复制 name=value</button>
+        <button class="mini-btn" data-cd="edit">编辑</button>
+        <button class="mini-btn danger" data-cd="del">删除</button>
+      </span></div>
+    <div class="cd-row"><span class="cd-k">值</span><span class="cd-v cd-value${showValues ? " cd-full" : ""}" data-full="${esc(val)}" title="点击复制完整值">${esc(shown)}</span></div>
+    <div class="cd-row"><span class="cd-k">域</span><span class="cd-v">${esc(c.domain)}</span></div>
+    <div class="cd-row"><span class="cd-k">路径</span><span class="cd-v">${esc(c.path)}</span></div>
+    <div class="cd-row"><span class="cd-k">标志</span><span class="cd-v">${esc(flags)}</span></div>
+    ${showValues ? "" : '<div class="cd-hint">当前为掩码显示；勾选「显示值」可明文查看（复制始终可用）</div>'}`;
+  d.querySelector('[data-cd="copyval"]').addEventListener("click", () => copyText(val, "已复制 Cookie 值"));
+  d.querySelector('[data-cd="copyline"]').addEventListener("click", () => copyText(c.name + "=" + val, "已复制 name=value"));
+  d.querySelector('[data-cd="edit"]').addEventListener("click", () => editCookie(c));
+  d.querySelector('[data-cd="del"]').addEventListener("click", () => deleteCookie(c));
+  d.querySelector(".cd-value").addEventListener("click", () => copyText(val, "已复制 Cookie 值"));
+}
+
+async function deleteCookie(c) {
+  const url = "https://" + c.domain.replace(/^\./, "") + c.path;
+  const r = await api("cookie:remove", { cookie: { name: c.name, url } });
+  toast(r.ok ? "已删除" : "删除失败：" + r.error);
+  if (r.ok) loadCookies();
 }
 
 function editCookie(c) {
