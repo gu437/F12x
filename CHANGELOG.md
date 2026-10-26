@@ -30,7 +30,7 @@
 - 改了什么：默认呼出快捷键 `Ctrl+Shift+F` → `Ctrl+Shift+Y`；README/手册/AGENTS 同步。新增 L2 检查固定 `Ctrl+Shift+Y`。
 - 为什么：`Ctrl+Shift+F` 是微软拼音等中文输入法的简体/繁体切换，会先被输入法消费，表现为“按了没反应”，同时把输入法切成繁体。
 - 验证：`dev/run.mjs` 112/112；真实扩展 `chrome.commands.getAll()` 快捷键为 `Ctrl+Shift+Y`。
-- 提交：未发布
+- 提交：`fb83558`
 ### 2026-10-27 · fix：修复 Ctrl+Shift+F 无法呼出侧边栏（0.4.1）
 - 改了什么：`background.js` 的 `chrome.commands` 处理器改为只调用 `chrome.sidePanel.open({ windowId: tab.windowId })`；移除同时传 `tabId` 与 `open({})` 回退。新增 L2 结构检查，禁止再次同时传 `windowId`/`tabId`。版本 0.4.1 五处同步；AGENTS 维护章节更新（仓库/令牌/代理/截图/CI）。
 - 为什么：Chrome 文档要求 `sidePanel.open()` 在 `windowId` 与 `tabId` 中二选一；同时传会被参数校验拒绝，原 `catch` 只打 `console.warn`，表现为按键无反应。
