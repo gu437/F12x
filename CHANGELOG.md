@@ -33,10 +33,10 @@
 - 验证：`dev/run.mjs` 57/57（新增站点迁移用例 + L2 站点下线检查）；Playwright 真实加载扩展重截界面：导航 6 项、顶栏无站点选择器、全流程 0 `pageerror`。
 - 提交：`b9b12e0`
 ### 2026-10-26 · feat：项目容器分键存储 + Issue/模板 CRUD（方案 001 / P2）
-- 改了什么：projects_v2（单键 map，每次保存重写全部项目）改为 projects_index_v2（元数据）+ project:<id>（项目全文）；项目内新增 issues / 	emplates 数组与 CRUD；黑板事实增加 source: user|ai；删除项目改为逐个解绑会话（适配分键会话布局）；启动时幂等迁移旧 projects_v2。
+- 改了什么：`projects_v2`（单键 map，每次保存重写全部项目）改为 `projects_index_v2`（元数据）+ `project:<id>`（项目全文）；项目内新增 `issues` / `templates` 数组与 CRUD；黑板事实增加 `source: user|ai`；删除项目改为逐个解绑会话（适配分键会话布局）；启动时幂等迁移旧 `projects_v2`。
 - 为什么：项目要成为唯一持久化容器（黑板/Issue/模板/会话），旧的单键 map 与站点工作区并存、且每次保存全量重写。
-- 验证：dev/run.mjs 55/55（新增 4 条 L1：迁移幂等 / 分键与计数 / 删除解绑 / 来源标记）；Playwright 真实 UI 中项目黑板显示「演示项目 · 3 条事实」。
-- 提交：a45a63
+- 验证：`dev/run.mjs` 55/55（新增 4 条 L1：迁移幂等 / 分键与计数 / 删除解绑 / 来源标记）；Playwright 真实 UI 中项目黑板显示「演示项目 · 3 条事实」。
+- 提交：`ba45a63`
 
 ### 2026-10-26 · refactor：删除 Scope 及其约束（方案 001 / P1）
 - 改了什么：按用户决定下线"功能没完善就先上的约束"——`panel.js` 删 `api()` 越界 `confirm`、Scope 模块整块（匹配/过滤/管理弹层/初始化）、网络 `onlyInScope` 过滤与行高亮；`index.html` 删 Scope 工具条；`styles.css` 删 14 条 Scope 规则；README 去掉 Scope 条目/存储键/已知边界；使用手册删除第 13 章并重编号（13 快捷键 / 14 工作流 / 15 限制 / 16 数据）；AGENTS 更新已知坑与"不做"。新增 L2 检查：产品代码不得再出现 9 个 Scope 标识。
