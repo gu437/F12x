@@ -27,6 +27,11 @@
 
 ## 未发布
 
+### 2026-10-26 · refactor：下线站点工作区并迁入项目（方案 001 / P3）
+- 改了什么：`memory.js` 删除全部站点 CRUD，新增 `migrateSitesToProjectsIfNeeded()`（每个站点 → 同名项目，重名加后缀；facts/templates 并入，留 `sites_backup_v1` 备份）；`router.js` 删 9 个 `site:*` 分支、新增 `project:fact_add`、`get_state` 去 `activeSiteId`；面板删站点视图/顶栏选择器/导航项/全部站点函数（约 110 处引用），「标记为发现」改「存到项目黑板」，Repeater「存到站点」改「存到黑板」；`index.html` / `styles.css` 删对应结构与样式（保留 AI 复用的 `.site-pane`）；README 去站点行与 `sites_v1`，手册删第 9 章并重编号。
+- 为什么：站点工作区与「项目」概念重复、还要手工维护；用户决定持久化数据统一落到项目，站点整体下线。
+- 验证：`dev/run.mjs` 57/57（新增站点迁移用例 + L2 站点下线检查）；Playwright 真实加载扩展重截界面：导航 6 项、顶栏无站点选择器、全流程 0 `pageerror`。
+- 提交：`b9b12e0`
 ### 2026-10-26 · feat：项目容器分键存储 + Issue/模板 CRUD（方案 001 / P2）
 - 改了什么：projects_v2（单键 map，每次保存重写全部项目）改为 projects_index_v2（元数据）+ project:<id>（项目全文）；项目内新增 issues / 	emplates 数组与 CRUD；黑板事实增加 source: user|ai；删除项目改为逐个解绑会话（适配分键会话布局）；启动时幂等迁移旧 projects_v2。
 - 为什么：项目要成为唯一持久化容器（黑板/Issue/模板/会话），旧的单键 map 与站点工作区并存、且每次保存全量重写。
