@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · feat：证据底座（方案 009 / P1）
+- 改了什么：新增 `src/evidence.js`（项目级证据、SHA-256、2MB 截断标记、列表/读取/删除、项目删除级联）；router 新增 `evidence:list/get/save/remove/attach/detach`，Issue 增加 `evidenceIds`；项目页新增「证据」页签（卡片/查看/复制 curl/关联 Issue/删除），网络详情与 Repeater 增加「存证据」；证据不可变、索引与正文分键。
+- 为什么：Issue 证据原来只是自由文本，网络缓冲会轮转；没有不可变证据对象，项目容器无法交付可复现结果。
+- 验证：`dev/run.mjs` 84/84（新增证据单测 + L2）；真实 UI：存证据→卡片→预览→复制 curl→关联 Issue（`evidenceIds=1`）；Repeater 存证据成功；0 `pageerror`。
+- 提交：`d6fe2b4`
+
 ### 2026-10-27 · refactor：下线轨迹与 archify（方案 008）
 - 改了什么：删除 AI 会话「记录 → 轨迹」子页签、生命周期/archify workflow 渲染、`buildWorkflowSpec`、缩放拖拽与「打开完整工件」；删除 `vendor/archify`（20 个文件，约 1.5MB）与对应 CSS；清理 `agent/executor/memory` 中“轨迹”措辞（`session.events` 保留，审计/压缩/批准仍依赖）；手册/README/15 截图/抓图脚本同步，新增 L2「轨迹已下线」。
 - 为什么：轨迹是展示层功能，依赖第三方 archify 引擎与大量专用代码；用户明确要求全面删除，减少维护面与体积，保留审计与黑板即可满足回看需求。
