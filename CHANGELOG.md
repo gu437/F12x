@@ -31,7 +31,7 @@
 - 改了什么：`LICENSE` 由专有许可替换为 GNU AGPL-3.0-only；新增 `NOTICE`（版权与 SPDX）与 `CONTRIBUTING.md`（贡献流程/许可声明）；README 许可证段落改为 AGPL；AGENTS 维护规范同步；GitHub 仓库设为 Public；版本 0.4.4 五处同步。
 - 为什么：专有许可阻止别人使用/修改/分发，与“欢迎别人优化精进”冲突；AGPL 允许使用/修改/分发与贡献，同时要求衍生（含网络服务）继续开源，版权仍归作者，闭源商用需另行授权。
 - 验证：GitHub 许可证识别为 AGPL-3.0；`dev/run.mjs` 111/111；仓库可见性 Public。
-- 提交：未发布
+- 提交：`40792fe`
 
 ### 2026-10-27 · fix：撤掉键盘快捷键（0.4.3）
 - 改了什么：从 manifest 删除 `commands`，从 background 删除 `chrome.commands` 监听；打开侧边栏改为**点击工具栏 F12x 图标**（`setPanelBehavior openPanelOnActionClick` 保留）。README/手册/AGENTS 同步；L2 改为“不得注册 commands + 保留 action”。
