@@ -104,10 +104,21 @@ async function saveProjectInner(project) {
   await chrome.storage.local.set({ [PROJECTS_INDEX_KEY]: index });
 }
 
+// 项目名唯一（trim + 大小写不敏感；AI 内部黑板不算用户项目）
+function projectNameExists(index, name, excludeId) {
+  const n = String(name || "").trim().toLowerCase();
+  if (!n) return false;
+  return index.some((m) => m.id !== excludeId && m.id !== AI_PROJECT_ID && String(m.name || "").trim().toLowerCase() === n);
+}
+
 export async function createProject(name, desc) {
+  const nm = String(name || "未命名项目").trim().substring(0, 50);
+  if (!nm) return { error: "项目名称不能为空", code: "INVALID" };
+  const idx = await readProjectIndex();
+  if (projectNameExists(idx, nm)) return { error: "项目名称已存在：" + nm, code: "CONFLICT" };
   const id = "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
   const project = {
-    id, name: String(name || "未命名项目").substring(0, 50),
+    id, name: nm,
     desc: String(desc || "").substring(0, 200),
     facts: [], issues: [], templates: [], createdAt: Date.now(), updatedAt: Date.now(),
   };
@@ -137,7 +148,11 @@ async function deleteProjectInner(projectId) {
 export async function renameProject(projectId, name) {
   const project = await getProject(projectId);
   if (!project) return null;
-  project.name = String(name || "").substring(0, 50) || project.name;
+  const nm = String(name || "").trim().substring(0, 50);
+  if (!nm) return { error: "项目名称不能为空", code: "INVALID" };
+  const idx = await readProjectIndex();
+  if (projectNameExists(idx, nm, projectId)) return { error: "项目名称已存在：" + nm, code: "CONFLICT" };
+  project.name = nm;
   await saveProject(project);
   return { id: project.id, name: project.name };
 }
@@ -873,6 +888,7 @@ export async function ensureActiveProject({ create = false } = {}) {
   }
   if (!create) return null;
   const p = await createProject("默认项目", "显式创建：Issue / 手动黑板等持久数据的默认归属");
+  if (p && p.error) return null;
   await setActiveProjectId(p.id);
   return p;
 }

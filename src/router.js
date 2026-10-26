@@ -545,7 +545,11 @@ export function handleMessage(message, sender, sendResponse) {
   }
   if (type === "project:create") {
     (async () => {
-      try { sendResponse({ ok: true, project: await createProject(message.name, message.desc) }); }
+      try {
+        const p = await createProject(message.name, message.desc);
+        if (p && p.error) return sendResponse({ ok: false, error: p.error, code: p.code });
+        sendResponse({ ok: true, project: p });
+      }
       catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;
@@ -554,6 +558,7 @@ export function handleMessage(message, sender, sendResponse) {
     (async () => {
       try {
         const p = await renameProject(message.projectId, message.name);
+        if (p && p.error) return sendResponse({ ok: false, error: p.error, code: p.code });
         sendResponse(p ? { ok: true, project: p } : { ok: false, error: "项目不存在" });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();

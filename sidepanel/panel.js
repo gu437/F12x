@@ -1398,9 +1398,9 @@ async function loadProjects(focusId) {
   if (r.ok) { app.projects = r.projects || []; app.currentProject = r.project || null; }
   renderProjectSelector();
   renderProjectList();
-  const id = focusId || (app.currentProject && app.currentProject.id);
-  if (id) await openProjectDetail(id);
-  else showProjectBrowser();
+  // 默认停在项目列表；只有显式传入 focusId 才打开详情
+  if (focusId) await openProjectDetail(focusId);
+  else { showProjectBrowser(); renderProjectList(); }
 }
 function renderProjectSelector() {
   const sel = $("project-selector");
