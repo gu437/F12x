@@ -1943,3 +1943,13 @@ body {
   .script-list { width: 100%; max-height: 34%; border-right: none; border-bottom: 1px solid var(--surface-4); }
   #script-layout .resizer-h { display: none; }
 }
+/* 网络历史回填提示 / 行标记 / 详情说明 */
+.net-history-banner {
+  margin: 0 10px 6px; padding: 6px 8px; border: 1px solid #e3d3a4; border-radius: 7px;
+  background: #fffbea; color: #7a5a00; font-size: 10.5px; line-height: 1.5;
+}
+.net-hist-tag {
+  display: inline-block; margin-right: 4px; padding: 0 4px; border-radius: 3px;
+  border: 1px solid #e3d3a4; background: #fffbea; color: #9a6700; font-size: 9px; line-height: 14px;
+}
+.net-history-note { padding: 10px; color: var(--text-3); font-size: 11px; line-height: 1.6; }

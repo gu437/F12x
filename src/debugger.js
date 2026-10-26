@@ -75,7 +75,7 @@ export async function debuggerAttach() {
   // 渗透场景页面初始加载的接口是关键分析对象——不因 attach 时机丢失可见性
   try {
     const r = await sendCDP("Runtime.evaluate", {
-      expression: `JSON.stringify(performance.getEntriesByType("resource").slice(-150).map(e => ({ url: e.name, type: e.initiatorType || "resource", duration: Math.round(e.duration || 0), size: e.transferSize || 0 })))`,
+      expression: `JSON.stringify(performance.getEntriesByType("resource").slice(-150).map(e => ({ url: e.name, type: e.initiatorType || "resource", duration: Math.round(e.duration || 0), size: e.transferSize || 0, status: e.responseStatus || 0 })))`,
       returnByValue: true
     });
     if (r?.result?.value) {
@@ -84,7 +84,7 @@ export async function debuggerAttach() {
         if (networkRequests.length >= NETWORK_MAX) networkRequests.shift();
         networkRequests.push({
           id: `hist_${Date.now().toString(36)}_${networkRequests.length}`,
-          url: e.url, method: null, // P0 修复：performance entry 无 method——不再硬编码 GET（误导过滤）
+          url: e.url, method: null, status: e.status || null, // P0 修复：performance entry 无 method——不再硬编码 GET（误导过滤）
           type: e.type || "history", timestamp: 0,
           size: e.size || 0, // 功能残缺 P2-4：表达式取了 transferSize 但 push 没存——补上（网络列表显示请求大小）
           requestHeaders: null, postData: null,
@@ -844,7 +844,8 @@ export function resetNetworkRequests() {
 export function networkSnapshot() {
   return networkRequests.map(r => ({
     id: r.id, url: r.url, method: r.method, type: r.type || "unknown",
-    timestamp: r.timestamp, status: r.status, mimeType: r.mimeType, source: r.source || "page"
+    timestamp: r.timestamp, status: r.status, mimeType: r.mimeType, source: r.source || "page",
+    size: r.size, history: !!r.history, intercepted: !!r.intercepted
   }));
 }
 export function consoleSnapshot() {
@@ -923,6 +924,14 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
       // 请求详情补全：响应头（Set-Cookie/Content-Type/Server 等）
       req.responseHeaders = params.response.headers || null;
       netPushUpdate(params.requestId, { status: params.response.status, mimeType: params.response.mimeType });
+    }
+  }
+
+  if (method === "Network.loadingFinished") {
+    const req = networkRequests.find(r => r.id === params.requestId);
+    if (req) {
+      req.size = params.encodedDataLength;
+      netPushUpdate(params.requestId, { size: params.encodedDataLength });
     }
   }
 
@@ -1048,7 +1057,8 @@ export async function get_network_request_detail(id, opts = {}) {
   // P0 修复：历史请求（attach 前）——CDP 不缓存其响应体，明确标注而非假装有
   if (req.history) {
     return {
-      url: req.url, method: req.method || null, status: null, history: true,
+      url: req.url, method: req.method || null, status: req.status || null,
+      size: req.size, type: req.type, history: true,
       historyNote: req.historyNote || "attach 前已加载的历史请求——CDP 不缓存 attach 前响应，无法获取响应体。如需响应，请刷新页面重新采集。",
       requestHeaders: req.requestHeaders || null, postData: req.postData || null
     };

@@ -628,10 +628,12 @@ function initNetworkModule() {
   // 元数据搜索（方案九.4 v1：URL/请求头/响应头，SW 内存过滤，200ms 防抖）
   $("net-search").addEventListener("input", () => {
     clearTimeout(app.network._searchT);
+    const seq = (app.network._searchSeq = (app.network._searchSeq || 0) + 1);
     const q = $("net-search").value.trim();
     app.network._searchT = setTimeout(async () => {
       if (!q) { app.network.searchIds = null; app.network.page = 1; renderNetworkTable(); return; }
       const r = await api("network:metadata_search", { query: q });
+      if (seq !== app.network._searchSeq) return; // 过期结果
       if (r.ok) { app.network.searchIds = new Set(r.ids || []); app.network.page = 1; renderNetworkTable(); }
       else toast("元数据搜索失败：" + (r.error || ""));
     }, 200);
@@ -696,12 +698,13 @@ async function loadNetworkList() {
 
 function filterNetwork() {
   const f = app.network.filter;
+  app.network.filterError = "";
   let items = app.network.items;
   if (f.url) {
     try {
       const re = new RegExp(f.url, "i");
       items = items.filter(i => re.test(i.url));
-    } catch (e) { /* 非法正则忽略 */ }
+    } catch (e) { app.network.filterError = e.message; items = []; }
   }
   if (f.method) items = items.filter(i => (i.method || "").toUpperCase() === f.method.toUpperCase());
   if (f.status) {
@@ -762,13 +765,20 @@ function renderNetworkTable() {
           ? `<td class="url-cell" title="${esc(it.url)}"><span class="url-copy" data-copy-url="${esc(it.id)}" title="复制完整 URL">⧉</span>${esc(it.url || "")}</td>`
           : k === "src"
             ? `<td class="src-${esc(it.source || "page")}">${esc(it.source || "page")}${it.intercepted ? " ⚡" : ""}</td>`
-            : `<td>${esc(it[k] != null ? String(it[k]) : "-")}</td>`).join("")}
+            : `<td>${k === "method" && it.history ? '<span class="net-hist-tag" title="attach 前历史请求（无响应详情）">历史</span>' : ""}${esc(it[k] != null ? String(it[k]) : "-")}</td>`).join("")}
         <td>
           <button class="mini-btn" data-act="detail">详情</button>
           <button class="mini-btn" data-act="send">发送▾</button>
         </td>
-      </tr>`).join("") || '<tr><td colspan="' + (cols.length + 1) + '"><div class="placeholder">暂无请求（刷新页面或切换标签触发采集）</div></td></tr>'}
+      </tr>`).join("") || '<tr><td colspan="' + (cols.length + 1) + '"><div class="placeholder">' + (app.network.filterError ? 'URL 过滤正则无效：' + esc(app.network.filterError) : '暂无请求（刷新页面或切换标签触发采集）') + '</div></td></tr>'}
   </tbody></table>`;
+  // 历史回填提示（attach 前加载的请求没有响应头/体）
+  const banner = $("net-history-banner");
+  if (banner) {
+    const histN = app.network.items.filter(i => i.history).length;
+    banner.classList.toggle("hidden", !histN);
+    banner.innerHTML = histN ? `<span>⚠ ${histN} 条 attach 前历史请求：只有 URL / 类型 / 大小，无响应详情。刷新目标页面后重新打开面板可完整采集。</span>` : "";
+  }
   // 分页控件
   const pager = $("net-pager");
   pager.innerHTML = filtered.length > app.network.pageSize
@@ -776,10 +786,11 @@ function renderNetworkTable() {
        <span class="pg-info">${app.network.page} / ${totalPages}（共 ${filtered.length}）</span>
        <button class="mini-btn" data-pg="next" ${app.network.page >= totalPages ? "disabled" : ""}>下一页 ›</button>`
     : "";
-  wrap.querySelectorAll("th").forEach(th => th.addEventListener("click", () => {
+  wrap.querySelectorAll("th[data-key]").forEach(th => th.addEventListener("click", () => {
     const key = th.dataset.key;
     if (app.network.sort?.key === key) app.network.sort.dir *= -1;
     else app.network.sort = { key, dir: 1 };
+    app.network.page = 1;
     renderNetworkTable();
   }));
   wrap.querySelectorAll("tbody tr").forEach(tr => {
@@ -873,6 +884,10 @@ function renderNetworkDetail() {
   const body = $("net-detail-body");
   if (!d) { body.textContent = ""; return; }
   if (d.error) { body.innerHTML = `<span class="err">${esc(errMsg(d))}</span>`; return; }
+  if (d.history) {
+    body.innerHTML = `<div class="net-history-note">${esc(d.historyNote || "attach 前已加载的历史请求（无响应头 / 体）")}</div>`;
+    return;
+  }
   const tab = app.network.detailTab;
   if (tab === "reqh") {
     body.innerHTML = `<div class="kv">${formatHeaders(d.requestHeaders)}</div>`;
