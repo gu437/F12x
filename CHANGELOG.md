@@ -27,31 +27,46 @@
 
 ## 未发布
 
+（暂无）
+
+## 0.3.0 — 2026-10-26
+
+### 2026-10-26 · chore：0.3.0 发布收口（方案 001 / P7）
+- 改了什么：版本 `0.3.0` 五处同步（manifest / README 标题 / `state.js` / `router.js VERSION` / background 启动日志）；新增 `cleanupLegacyKeys()`，启动时清理 `f12x_scope_v1`、旧 `shot_*` 池 + `shots_index_v1`、已迁移的 `conversations_v2` / `projects_v2` / `sites_v1` / `active_site_v1` / `f12x_issues_v1`；迁移备份 `sites_backup_v1` / `issues_backup_v1` 各保留一版；手册版本与页脚同步。
+- 为什么：0.3.0 的"项目即唯一持久化容器"重构（P1–P6）已全部完成，需要一次干净发布：版本一致、旧键不残留、文档与代码对齐。
+- 验证：`dev/run.mjs` 63/63（含版本五处一致检查）；清理只读索引键，不做全库扫描；真实 UI 冒烟覆盖项目页 / Issue / 截图 / AI 会话。
+- 提交：`6ec714f`
+
 ### 2026-10-26 · feat：项目页完整布局与跨模块联动（方案 001 / P6+）
 - 改了什么：项目列表加搜索与新建栏（名称 + 描述）；详情页四页签全部改成内联编辑器（黑板新增/送入 AI、Issue 新建编辑、模板新增/运行、会话新建/打开/解绑），并加 `导出 JSON`；模板`运行`会新建绑定该项目的会话并直接下发任务；事实`送入 AI` 自动切页填输入框。
 - 为什么：P6 第一版只是最小可用（只读列表 + 打开 Issue 工作台），项目页与网络 / Issue / AI / 模板之间还缺闭环；补完后"一个项目"能独立完成 收集 → 记录 → 验证 → 下发。
 - 验证：`dev/run.mjs` 63/63；真实 UI 全链路：新增事实 2→3、Issue 1→2、模板 1→2、新建会话跳 AI 并打开、导出 `f12x-project-客户 A 评估.json`、新建项目 2→3，0 `pageerror`；截图 `docs/images/20-project.png` 已更新。
 - 提交：`7ca6d5a`
+
 ### 2026-10-26 · feat：项目视图与当前项目切换（方案 001 / P6）
 - 改了什么：新增「项目」视图（列表 + 页签详情：黑板 / Issue / 模板 / 会话）+ 顶栏项目选择器；后台补 `project:get` / `project:set_active` / `project:fact_remove` / `project:template_add` / `project:template_remove`，`issue:save/delete` 支持显式 `projectId`；删除项目只删黑板 / Issue / 模板，会话解绑保留。
 - 为什么：项目已是唯一持久化容器，但没有界面入口；用户需要一个地方统一看/管黑板、Issue、模板、会话，并切换当前项目。
 - 验证：`dev/run.mjs` 63/63（新增项目视图检查）；真实 UI：列表 2 项、详情四页签计数正确、新建后 3 项、0 `pageerror`；截图 `docs/images/20-project.png`。
 - 提交：`c4cf11f`
+
 ### 2026-10-26 · feat：AI 会话截图引用化（方案 001 / P5）
 - 改了什么：`screenshot` 不再写全局 5 张池，改为按会话 `shot:<convId>:<key>` + `shot_index:<convId>`（无数量上限）；AI 截图写入会话并记 `conv.shots`，模型只拿到引用 key；会话里渲染「📎 截图引用」，点击弹层看原图并可导出 PNG；删除会话级联删图。
 - 为什么：全局 5 张池既限制数量、又和会话无归属；按会话存引用后，图片不占对话上下文、可以无限留存、删会话即彻底清理。
 - 验证：`dev/run.mjs` 62/62（截图存储 / 无上限 / 级联删除用例 + L2 检查）；真实 UI：引用行可见、点击弹层出现图片、0 `pageerror`。手动截图路径未在真实页面手测（dataUrl 直出）。
 - 提交：`bb493b0`
+
 ### 2026-10-26 · feat：Issue 归入项目持久化（方案 001 / P4）
 - 改了什么：新增 `active_project_v1` 与 `ensureActiveProject()`（没有项目时自动建「默认项目」）；Issue 读写改走当前项目的 `project.issues`（`project:active` / `issue:list` / `issue:save` / `issue:delete`），面板不再直接读写 `f12x_issues_v1`；旧全局库一次性迁入「迁移项目（旧数据）」并留 `issues_backup_v1` 备份。
 - 为什么：Issue 是用户手工产出的结论，属于持久数据；按"持久数据全部落项目"的决策，不应再有独立的全局 Issue 库。
 - 验证：`dev/run.mjs` 60/60；真实 UI 走通「保存到演示项目 → 刷新仍在 → 导出 f12x-issues.md → 删除后清空」，0 `pageerror`。
 - 提交：`a03cc35`
+
 ### 2026-10-26 · refactor：下线站点工作区并迁入项目（方案 001 / P3）
 - 改了什么：`memory.js` 删除全部站点 CRUD，新增 `migrateSitesToProjectsIfNeeded()`（每个站点 → 同名项目，重名加后缀；facts/templates 并入，留 `sites_backup_v1` 备份）；`router.js` 删 9 个 `site:*` 分支、新增 `project:fact_add`、`get_state` 去 `activeSiteId`；面板删站点视图/顶栏选择器/导航项/全部站点函数（约 110 处引用），「标记为发现」改「存到项目黑板」，Repeater「存到站点」改「存到黑板」；`index.html` / `styles.css` 删对应结构与样式（保留 AI 复用的 `.site-pane`）；README 去站点行与 `sites_v1`，手册删第 9 章并重编号。
 - 为什么：站点工作区与「项目」概念重复、还要手工维护；用户决定持久化数据统一落到项目，站点整体下线。
 - 验证：`dev/run.mjs` 57/57（新增站点迁移用例 + L2 站点下线检查）；Playwright 真实加载扩展重截界面：导航 6 项、顶栏无站点选择器、全流程 0 `pageerror`。
 - 提交：`b9b12e0`
+
 ### 2026-10-26 · feat：项目容器分键存储 + Issue/模板 CRUD（方案 001 / P2）
 - 改了什么：`projects_v2`（单键 map，每次保存重写全部项目）改为 `projects_index_v2`（元数据）+ `project:<id>`（项目全文）；项目内新增 `issues` / `templates` 数组与 CRUD；黑板事实增加 `source: user|ai`；删除项目改为逐个解绑会话（适配分键会话布局）；启动时幂等迁移旧 `projects_v2`。
 - 为什么：项目要成为唯一持久化容器（黑板/Issue/模板/会话），旧的单键 map 与站点工作区并存、且每次保存全量重写。
