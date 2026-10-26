@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · feat：项目备份导入与脱敏报告（方案 009 / P6）
+- 改了什么：新增 `src/bundle.js`（导出项目+证据+序列+基线，身份可选；导入重名追加、证据/身份 id 重映射、Issue `evidenceIds` 重映射、失败删除新项目回滚）与 `src/report.js`（HTML 单文件/Markdown，内嵌 Issue 与证据请求/响应/差异，默认脱敏 Cookie/Set-Cookie/Authorization、JWT、Bearer、邮箱、手机、内网 IP、敏感查询参数）；router 增加 `bundle:export/import`、`report:build`；项目页增加「备份/导入」「报告」。
+- 为什么：持久容器不能只出不进；交付物需要可读、可复现且可安全分享的报告，默认脱敏避免二次泄漏。
+- 验证：`dev/run.mjs` 104/104；UI 导出证据 1/身份 1 → 删项目 → 导入成功 → Issue 证据引用/ hash 恢复 → 报告 `redacted=true`，无 `sid=A`、无邮箱泄漏；0 `pageerror`。
+- 提交：`918e519`
+
 ### 2026-10-27 · feat：语义 diff 与接口基线（方案 009 / P5）
 - 改了什么：新增 `src/diff.js`（JSON 路径级 added/removed/changed、类型变化、默认忽略 timestamp/requestId/csrf 等易变字段，非 JSON 退化为行差异）与 `src/baseline.js`（项目级接口基线 CRUD、pathKey、项目删除级联）；router 增加 `baseline:save/list/get/remove/diff`；矩阵单元格自动与基线做字段级 diff 并新增 `field-diff`；Repeater 增加「存基线 / 对比基线」；矩阵详情展示差异列表。
 - 为什么：越权常表现为字段多出或值变化（`role`/`email`/`ownerId`），只看状态/长度会漏判；基线让“同一接口前后变化”可重复比较。
