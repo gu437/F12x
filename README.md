@@ -1,4 +1,4 @@
-# F12x（Chrome MV3 · 当前版本 0.4.2）
+# F12x（Chrome MV3 · 当前版本 0.4.3）
 
 浏览器原生、人类主导的 **Web/API 授权与注入验证工作台**；手动功能不依赖 AI，内建可选 AI 工作台。
 Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加载已解压的扩展程序」安装。
@@ -25,7 +25,7 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 ## 快速开始
 
 1. 打开 `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」，选择本目录。
-2. 任意页面按 **Ctrl+Shift+Y** 呼出 / 聚焦工具台（也支持固定侧边栏）。\n   - `Ctrl+Shift+F` 是微软拼音等输入法的简繁切换，会抢按键，所以不使用它；如 `Ctrl+Shift+Y` 也被占用，可在 `chrome://extensions/shortcuts` 改键。
+2. 点浏览器工具栏的 **F12x 图标** 打开 / 聚焦侧边栏（不再注册键盘快捷键，避免与输入法简繁切换冲突）。
 3. 工具台默认全部可用，无需任何配置。
 4. 若要用 AI 会话：在扩展设置中点「+ 添加模型」建立模型条目（名称 / API Key / Base URL / 模型名，可并存多条并任选默认；默认端点参考 `src/llm.js` 的 `DEFAULT_LLM_ENDPOINTS`：DeepSeek / OpenAI / Anthropic / Ollama(localhost:11434)）。仅填过旧版单组 Key / URL 的配置会在首次打开设置时自动迁移成一条「默认」模型。
    - **本地模型接入**（Ollama / LM Studio）：Base URL 填 `http://127.0.0.1:11434`（或 LM Studio 端口），模型名如 `qwen2.5:7b`，Key 可留空（本地回环自动填占位）。**Ollama 需设置环境变量 `OLLAMA_ORIGINS=*` 后重启**（否则浏览器扩展请求会因 Origin 校验被 403）。扩展对本地回环模型请求自动带 `keep_alive:-1` 常驻，并在空闲期默认开启"本地空闲保活"（`f12x_local_warm`，设置可关）。
@@ -154,7 +154,7 @@ node --check background.js
 node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manifest_version)"
 ```
 
-③ **手动回归**（改完必过）：重载扩展 → `Ctrl+Shift+Y` → 页面骨架 / 网络列表+详情 / Repeater 发送 / Intruder 开始与结果表 / Decoder / Cookie 读取 / 脚本源码；碰 AI 链路再补：对话一问、任务模式一轮（含批准条）、停止 / 接管 / 继续。日志前缀：`[F12x]` `[Agent]` `[CDP]` `[ExpertRound]` `[Blackboard]` `[Checkpoint]`。
+③ **手动回归**（改完必过）：重载扩展 → 点击工具栏 F12x 图标 → 页面骨架 / 网络列表+详情 / Repeater 发送 / Intruder 开始与结果表 / Decoder / Cookie 读取 / 脚本源码；碰 AI 链路再补：对话一问、任务模式一轮（含批准条）、停止 / 接管 / 继续。日志前缀：`[F12x]` `[Agent]` `[CDP]` `[ExpertRound]` `[Blackboard]` `[Checkpoint]`。
 
 **git 约定**：一主题一提交，中文信息带 `feat:` / `fix:` / `docs:` / `refactor:` / `perf:` / `chore:` 前缀，正文写清"改了什么 + 为什么 + 怎么验"。每次实质改动必须同时在 [`CHANGELOG.md`](CHANGELOG.md) 追加一条（模板与规则见文件头）。本地过程文档（`方案_v*`、`REGRESSION_*`、`压缩机制对齐_harness.md` 等）不入库，见 `.gitignore`。
 

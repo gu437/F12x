@@ -26,6 +26,12 @@
 ---
 
 ## 未发布
+
+### 2026-10-27 · fix：撤掉键盘快捷键（0.4.3）
+- 改了什么：从 manifest 删除 `commands`，从 background 删除 `chrome.commands` 监听；打开侧边栏改为**点击工具栏 F12x 图标**（`setPanelBehavior openPanelOnActionClick` 保留）。README/手册/AGENTS 同步；L2 改为“不得注册 commands + 保留 action”。
+- 为什么：`Ctrl+Shift+F` 被微软拼音等输入法简繁切换占用，换键仍可能冲突；直接不再注册键盘快捷键，彻底避免抢键与误切繁体。
+- 验证：`dev/run.mjs` 111/111；manifest 无 commands；background 无 chrome.commands；工具栏图标仍可打开侧边栏。
+- 提交：未发布
 ### 2026-10-27 · fix：快捷键避开输入法简繁切换（0.4.2）
 - 改了什么：默认呼出快捷键 `Ctrl+Shift+F` → `Ctrl+Shift+Y`；README/手册/AGENTS 同步。新增 L2 检查固定 `Ctrl+Shift+Y`。
 - 为什么：`Ctrl+Shift+F` 是微软拼音等中文输入法的简体/繁体切换，会先被输入法消费，表现为“按了没反应”，同时把输入法切成繁体。

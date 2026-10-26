@@ -50,19 +50,6 @@ busOn(({ event, data }) => {
 // --- ctrl 通道消息路由入口（type → handler 分发，详见 src/router.js） ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => handleMessage(message, sender, sendResponse));
 
-// --- 快捷键：chrome.commands 呼出面板（方案九.3；页面内/面板内快捷键见 content/panel） ---
-chrome.commands.onCommand.addListener(async (command) => {
-  if (command === "open-panel") {
-    try {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const tab = tabs && tabs[0];
-      if (!tab || !tab.windowId) throw new Error("未找到活动窗口");
-      // sidePanel.open 的 windowId / tabId 二选一；同时传会被参数校验拒绝（旧实现静默失败）
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-    } catch (e) { console.warn("[F12x] 呼出面板失败:", e.message); }
-  }
-});
-
 // ============================================================
 // SW 生命周期防护（方案 14.1 修复）：chrome.alarms 每 20s 保活 SW
 // 批准等待 / 拦截等待等异步挂起期间，SW 被 kill 会导致等待丢失——
@@ -95,6 +82,6 @@ async function init() {
   } catch (e) {
     console.warn("[F12x] AI 引擎恢复批准失败（隔离，不影响工具台）:", e.message);
   }
-  console.log("[F12x] Service Worker 启动完成 v0.4.2");
+  console.log("[F12x] Service Worker 启动完成 v0.4.3");
 }
 init();
