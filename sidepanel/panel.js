@@ -1386,8 +1386,7 @@ async function loadScriptContent(url) {
   $("script-send-ai").addEventListener("click", async () => {
     const sel = window.getSelection() ? window.getSelection().toString().trim() : "";
     const frag = sel || lines.slice(0, 60).join("\n");
-    const resp = await api("ai:chat", { text: `分析以下代码片段（来源 ${url}），关注安全缺陷（XSS/SQLi/注入/敏感信息泄漏）：\n${frag.substring(0, 4000)}` });
-    toast(resp.ok ? "AI 分析已输出到状态条" : "失败：" + (resp.error || ""));
+    await aiSendFromPage(`分析以下代码片段（来源 ${url}），关注安全缺陷（XSS/SQLi/注入/敏感信息泄漏）：\n${frag.substring(0, 4000)}`, "代码片段分析", true);
   });
 }
 
@@ -2828,6 +2827,33 @@ async function chatSendGuard() {
     diagLine("诊断：发送处理抛出异常——" + ((err && err.message) || err));
     toast("发送异常：" + ((err && err.message) || err));
   }
+}
+
+// 页面 / 脚本 → AI 统一入口：先落到一条可见会话，再填输入框 / 发送
+// （旧实现走一次性 ai:chat，回复只进底部状态条，用户找不到）
+async function aiSendFromPage(text, title, autoSend = true) {
+  const body = String(text || "").trim();
+  if (!body) return;
+  let convId = (chatUI.open && chatUI.convId) || "";
+  const projectId = (app.currentProject && app.currentProject.id) || null;
+  if (!convId) {
+    const r = await api("ai:conversation_create", { projectId, title: String(title || "页面分析").substring(0, 40) });
+    if (!r.ok) return toast("新建会话失败：" + (r.error || ""));
+    convId = r.conv.convId;
+    switchView("ai");
+    await openAIDetail({ convId, title: r.conv.title, msgCount: 0, updatedAt: Date.now(), type: "task", projectId });
+  } else {
+    switchView("ai");
+  }
+  const input = $("ai-input");
+  if (input) { input.value = body; input.focus(); }
+  const st = await api("util:get_state");
+  if (!(st.ok && st.state && st.state.llmConfigured)) {
+    toast("未配置模型：内容已填入当前会话输入框");
+    return;
+  }
+  if (autoSend) { await chatSend(); }
+  else toast("已填入 AI 输入框");
 }
 
 // 发送：进入 busy，等后端实时事件把气泡补齐
@@ -4322,8 +4348,7 @@ function handleStream(event, data) {
         // 轻量分析：元素描述走 ai:chat（回复流到 AI 状态条）
         const attrsTxt = Object.entries(attrs).slice(0, 6).map(([k, v]) => `${k}=${v}`).join(" ");
         const text = `分析该页面元素的安全/功能含义：\n<${data.tag} ${attrsTxt}>\n选择器: ${data.selector || code.selector || ""}\n${data.text ? "文本: " + data.text.substring(0, 120) : ""}`;
-        const r = await api("ai:chat", { text });
-        if (!r.ok && !r.configured) toast(r.error || "AI 调用失败");
+        await aiSendFromPage(text, "元素分析：" + data.tag, true);
       });
       card.querySelector('[data-ic="ai-debug"]').addEventListener("click", async () => {
         // v0.3 精确调试：底层代码（HTML + 事件监听器 JS 源码 + CSS 规则）→ 完整 AI 引擎（ai:task）
@@ -4344,9 +4369,7 @@ function handleStream(event, data) {
           L.push("\n── 匹配 CSS 规则 ──");
           for (const c of css) L.push("• " + String(c).substring(0, 300));
         }
-        toast("已送 AI 精确调试（完整引擎）…");
-        const r = await api("ai:task", { text: L.join("\n") });
-        if (!r.ok && r.error !== "steering") toast(r.error || "AI 调用失败");
+        await aiSendFromPage(L.join("\n"), "精确调试：" + data.tag, true);
       });
       break;
     }
