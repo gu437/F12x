@@ -1478,7 +1478,7 @@ function renderProjFacts(p) {
     const f = rows.find((x) => x.key === b.dataset.factAi);
     if (!f) return;
     const text = "[项目黑板] " + f.key + "（" + (f.category || "misc") + "）：" + (f.summary || "");
-    await aiSendFromPage(text, "项目黑板：" + f.key, true);
+    await aiSendFromPage(text, "项目黑板：" + f.key, true, p.id);
   }));
 }
 
@@ -1580,19 +1580,11 @@ function renderProjConvs(convs) {
 }
 
 // —— 联动：在项目下发起 AI 任务（新建会话 → 打开 → 发送） ——
+// 模板运行：与其他「送 AI」一致，先让用户选会话（新建会绑定当前查看的项目）
 async function runProjectTask(text, title) {
   const p = app.projDetail && app.projDetail.project;
   if (!p) return toast("请先打开一个项目");
-  const r = await api("ai:conversation_create", { projectId: p.id, title: title || "项目任务" });
-  if (!r.ok) return toast("新建会话失败：" + (r.error || ""));
-  const c = r.conv;
-  switchView("ai");
-  await openAIDetail({ convId: c.convId, title: c.title, msgCount: 0, updatedAt: Date.now(), type: "task", projectId: p.id });
-  const input = $("ai-input");
-  if (!input) return;
-  input.value = text;
-  toast("已在项目会话中下发任务（可随时停止）");
-  await chatSend();
+  return pickConversationForAI({ text, titleHint: title || "项目任务", autoSend: true, projectId: p.id });
 }
 
 // —— 项目操作 ——
@@ -2828,22 +2820,22 @@ async function chatSendGuard() {
 
 // 页面 / 脚本 / 项目事实 → AI：先让用户选会话（或新建），再投递
 // （不再自动决定会话；旧实现走一次性 ai:chat，回复只进底部状态条）
-async function aiSendFromPage(text, titleHint = "页面分析", autoSend = true) {
+async function aiSendFromPage(text, titleHint = "页面分析", autoSend = true, projectId = "") {
   const body = String(text || "").trim();
   if (!body) return;
-  return pickConversationForAI({ text: body, titleHint, autoSend });
+  return pickConversationForAI({ text: body, titleHint, autoSend, projectId });
 }
 
-async function pickConversationForAI({ text, titleHint = "页面分析", autoSend = true }) {
+async function pickConversationForAI({ text, titleHint = "页面分析", autoSend = true, projectId = "" }) {
   const r = await api("ai:conversations");
   const list = r.ok ? (r.conversations || []) : [];
-  const pid = (app.currentProject && app.currentProject.id) || "";
-  const pname = (app.currentProject && app.currentProject.name) || "未绑定项目";
+  const pid = projectId || (app.currentProject && app.currentProject.id) || "";
+  const pname = (app.projects.find((x) => x.id === pid) || {}).name || (app.currentProject && app.currentProject.name) || "未绑定项目";
   const opts = list.map((c) => `<option value="${esc(c.convId)}">${esc(c.title || "未命名")} · ${c.projectId ? "项目" : "独立"} · ${c.msgCount || 0} 条</option>`).join("");
   openModal(`<h3>送到哪个会话？</h3>
-    <div class="ai-pick-hint">选已有会话，或新建（新会话会绑定当前项目「${esc(pname)}」）</div>
+    <div class="ai-pick-hint">选已有会话，或新建（新会话会绑定项目「${esc(pname)}」）</div>
     <select id="ap-conv">
-      <option value="__new__">＋ 新建会话（绑定当前项目）</option>
+      <option value="__new__">＋ 新建会话（绑定：${esc(pname)}）</option>
       ${opts}
     </select>
     <input id="ap-title" class="text-input hidden" placeholder="新会话标题（可选）" value="${esc(titleHint)}" />
