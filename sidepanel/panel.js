@@ -290,6 +290,29 @@ const F12X_ERR_TEXT = {
   TOOL_EXECUTION_ERROR: "工具执行失败", NOT_FOUND: "资源不存在", ABORTED: "已中止"
 };
 // 错误响应对象 → 用户可读文本（有码取映射文案；无码回退原始 error——存量数据兼容）
+// 通用复制：优先 Clipboard API，失败降级 execCommand（扩展页 / 无权限场景）
+async function copyText(text, label = "已复制") {
+  const t = String(text == null ? "" : text);
+  if (!t) { toast("没有可复制的内容"); return false; }
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(t);
+    ok = true;
+  } catch (e) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = t;
+      ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand("copy");
+      ta.remove();
+    } catch (e2) { ok = false; }
+  }
+  toast(ok ? (label + "（" + t.length + " 字符）") : "复制失败，请手动选中复制");
+  return ok;
+}
+
 function errMsg(r) {
   const c = r && r.code;
   const m = c && F12X_ERR_TEXT[c];
@@ -732,7 +755,7 @@ function renderNetworkTable() {
     ${pageItems.map(it => `
       <tr data-id="${esc(it.id)}" class="${app.network.selectedId === it.id ? "selected" : ""}">
         ${cols.map(([k]) => k === "url"
-          ? `<td title="${esc(it.url)}">${esc(it.url || "")}</td>`
+          ? `<td class="url-cell" title="${esc(it.url)}"><span class="url-copy" data-copy-url="${esc(it.id)}" title="复制完整 URL">⧉</span>${esc(it.url || "")}</td>`
           : k === "src"
             ? `<td class="src-${esc(it.source || "page")}">${esc(it.source || "page")}${it.intercepted ? " ⚡" : ""}</td>`
             : `<td>${esc(it[k] != null ? String(it[k]) : "-")}</td>`).join("")}
@@ -763,6 +786,12 @@ function renderNetworkTable() {
       openNetworkDetail(id);
       renderNetworkTable();
     });
+    const urlCopy = tr.querySelector(".url-copy");
+    if (urlCopy) urlCopy.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const item = app.network.items.find(i => i.id === id);
+      if (item) copyText(item.url, "已复制 URL");
+    });
     const detailBtn = tr.querySelector('[data-act="detail"]');
     if (detailBtn) detailBtn.addEventListener("click", () => { app.network.selectedId = id; openNetworkDetail(id); renderNetworkTable(); });
     const sendBtn = tr.querySelector('[data-act="send"]');
@@ -781,8 +810,17 @@ function ensureDetailActions(item) {
     actions.className = "net-detail-actions";
     $("net-detail-tabs").parentNode.insertBefore(actions, $("net-detail-tabs"));
   }
+  let urlBar = document.querySelector("#net-detail .net-detail-url");
+  if (!urlBar) {
+    urlBar = document.createElement("div");
+    urlBar.className = "net-detail-url";
+    urlBar.title = "完整 URL（可选中复制）";
+    $("net-detail-tabs").parentNode.insertBefore(urlBar, actions);
+  }
+  urlBar.textContent = item ? (item.url || "") : "";
   if (item) {
     actions.innerHTML = `
+      <button class="mini-btn" data-st="copyurl" title="复制完整 URL">复制 URL</button>
       <button class="mini-btn" data-st="repeater">→ Repeater</button>
       <button class="mini-btn" data-st="intruder">→ Intruder</button>
       <button class="mini-btn" data-st="decoder">→ Decoder</button>
@@ -790,6 +828,7 @@ function ensureDetailActions(item) {
       <button class="mini-btn" data-st="ai">→ AI</button>
       <button class="mini-btn" data-st="mark">标记为发现</button>
       <button class="mini-btn" data-st="issue">→ Issue</button>`;
+    actions.querySelector('[data-st="copyurl"]').addEventListener("click", () => copyText(item.url, "已复制 URL"));
     actions.querySelector('[data-st="repeater"]').addEventListener("click", () => sendToRepeater(item));
     actions.querySelector('[data-st="intruder"]').addEventListener("click", () => sendToIntruder(item));
     actions.querySelector('[data-st="decoder"]').addEventListener("click", () => sendToDecoder(item));
@@ -1308,13 +1347,20 @@ async function decRun() {
 // ============================================================
 function initCookieModule() {
   $("cookie-refresh").addEventListener("click", loadCookies);
+  const copyAll = $("cookie-copy-all");
+  if (copyAll) copyAll.addEventListener("click", () => {
+    const lines = cookieData.filter((c) => c.value).map((c) => c.name + "=" + c.value + "; domain=" + c.domain + "; path=" + c.path);
+    if (!lines.length) return toast("没有可复制的 Cookie 值");
+    copyText(lines.join("\n"), "已复制 " + lines.length + " 条 Cookie");
+  });
   $("cookie-filter").addEventListener("input", renderCookies);
   $("cookie-show-values").addEventListener("change", () => { loadCookies(); });
 }
 
 let cookieData = [];
 async function loadCookies() {
-  const includeValues = $("cookie-show-values").checked;
+  // 始终取回真实值：界面按开关决定是否明文显示，复制永远可用
+  const includeValues = true;
   const r = await api("tool:cookies", { includeValues });
   if (!r.ok) { $("cookie-table-wrap").innerHTML = `<div class="placeholder">Cookie 读取失败：${esc(r.error)}</div>`; return; }
   cookieData = r.cookies || [];
@@ -1328,17 +1374,19 @@ function maskVal(v) {
 }
 
 function renderCookies() {
+  const showValues = !!$("cookie-show-values").checked;
   const f = $("cookie-filter").value.toLowerCase();
   const items = cookieData.filter(c => !f || (c.name + c.domain).toLowerCase().includes(f));
   const wrap = $("cookie-table-wrap");
   wrap.innerHTML = `<table class="cookie-table"><thead><tr><th>名称</th><th>值</th><th>域</th><th>路径</th><th>标志</th><th>操作</th></tr></thead><tbody>
     ${items.map(c => `<tr>
       <td>${esc(c.name)}</td>
-      <td class="val cookie-val" data-full="${esc(c.value ?? "")}">${esc(maskVal(c.value))}</td>
+      <td class="val cookie-val${showValues ? " val-full" : ""}" data-full="${esc(c.value ?? "")}" title="${showValues ? "点击复制完整值" : "点击复制完整值（当前掩码显示）"}">${esc(showValues ? (c.value || "") : maskVal(c.value))}</td>
       <td>${esc(c.domain)}</td>
       <td>${esc(c.path)}</td>
       <td>${c.httpOnly ? "H" : ""}${c.secure ? "S" : ""}${c.sameSite ? "·" + esc(c.sameSite) : ""}</td>
       <td>
+        <button class="mini-btn" data-copy="${esc(c.name)}" title="复制完整值">复制</button>
         <button class="mini-btn" data-edit="${esc(c.name)}">编辑</button>
         <button class="mini-btn" data-del="${esc(c.name)}">删除</button>
       </td>
@@ -1348,15 +1396,15 @@ function renderCookies() {
     const c = cookieData.find(x => x.name === b.dataset.edit);
     if (c) editCookie(c);
   }));
-  // 值脱敏（方案 3.1：默认掩码显示，点击切换完整值）
+  // 点击值复制（掩码与否都可复制真实值）
   wrap.querySelectorAll(".cookie-val").forEach(el => {
-    el.title = "点击查看完整值";
-    el.addEventListener("click", () => {
-      const full = el.dataset.full || "";
-      if (el.dataset.masked !== "1") { el.dataset.masked = "1"; el.textContent = full || "…"; el.title = "点击隐藏"; }
-      else { delete el.dataset.masked; el.textContent = maskVal(full); el.title = "点击查看完整值"; }
-    });
+    el.title = "点击复制完整值";
+    el.addEventListener("click", () => copyText(el.dataset.full || "", "已复制 Cookie 值"));
   });
+  wrap.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", () => {
+    const c = cookieData.find(x => x.name === b.dataset.copy);
+    if (c) copyText(c.value || "", "已复制 Cookie「" + c.name + "」");
+  }));
   wrap.querySelectorAll('[data-del]').forEach(b => b.addEventListener("click", async () => {
     const c = cookieData.find(x => x.name === b.dataset.del);
     if (!c) return;

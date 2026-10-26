@@ -269,10 +269,10 @@ body.resizing-h { cursor: ew-resize !important; user-select: none; }
 
 /* ---------- Cookie ---------- */
 #cookie-table-wrap { flex: 1; min-height: 0; overflow: auto; }
-.cookie-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--mono); }
+.cookie-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--mono); }
 .cookie-table th { position: sticky; top: 0; background: var(--surface-2); color: var(--text-3); text-align: left; padding: 4px 6px; font-size: 10px; }
-.cookie-table td { padding: 3px 6px; border-bottom: 1px solid var(--surface-3); word-break: break-all; }
-.cookie-table td.val { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cookie-table td { padding: 3px 6px; border-bottom: 1px solid var(--surface-3); word-break: normal; white-space: nowrap; }
+.cookie-table td.val { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- 脚本 ---------- */
 #script-layout { display: flex; flex: 1; min-height: 0; }
@@ -1852,3 +1852,28 @@ body {
   box-shadow: 0 0 0 3px rgba(65, 118, 230, .14);
 }
 #view-network .net-filters .text-input { padding-right: 10px; }
+/* 可复制 / 可读全：网络 URL、Cookie 值 */
+.net-table td.url-cell { cursor: help; }
+.net-detail-url {
+  padding: 5px 8px; border-bottom: 1px solid var(--surface-4);
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.5; color: var(--text-2);
+  word-break: break-all; user-select: text; background: var(--surface-2);
+}
+.cookie-table td.val { max-width: 240px; cursor: copy; }
+.cookie-table td.val:hover { color: var(--brand, #4176e6); }
+
+/* 网络 URL 单元格内的复制图标 */
+.net-table td.url-cell { cursor: pointer; }
+.url-copy {
+  display: inline-block; width: 14px; margin-right: 3px; text-align: center;
+  color: var(--text-4, #999); cursor: copy; user-select: none;
+}
+.url-copy:hover { color: var(--brand, #4176e6); }
+
+.cookie-table td.val.val-full { white-space: normal; word-break: break-all; overflow: visible; text-overflow: clip; }
+
+/* 网络表：操作列吸附右侧（URL 复制图标在单元格内，操作无需横向滚动） */
+.net-table th:last-child, .net-table td:last-child {
+  position: sticky; right: 0; background: var(--surface-1); z-index: 2;
+  box-shadow: -4px 0 6px rgba(0, 0, 0, .05);
+}
