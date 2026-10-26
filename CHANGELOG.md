@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-26 · feat：会话顶部上下文面板（方案 003）
+- 改了什么：任务开始时把本轮注入的项目事实（key/摘要/置信度/类别、N/总数）与预算（窗口/压力阈值/保留尾部）写入 `conv:<id>.contextFacts/contextBudget` 并推 `context:snapshot`；`ai:conversation_detail` 返回这两个字段；AI 会话聊天区顶部新增可展开面板（摘要 + 事实列表 + 最近压缩 method/trigger/tokens/时间），打开详情、记录刷新、实时快照、压缩完成都会更新；样式限高 220px 可滚动。
+- 为什么：此前用户与模型都看不到“本轮到底注入了哪些 facts、什么时候压缩过”，上下文治理只能靠猜；这是上下文可观察性的最后一块。
+- 验证：`dev/run.mjs` 75/75（新增 L2 面板/快照检查）；真实 UI：摘要「事实 2/35 · 压缩 2 次」、展开 2 条事实、元信息含窗口/阈值/尾部与最近压缩详情、实时 `context:snapshot` 更新为 `3/40`、0 `pageerror`。
+- 提交：`2f6d205`
+
 ### 2026-10-26 · feat：让 AI 知道自己能做什么（方案 002）
 - 改了什么：`prompts.js` 删除 IDENTITY 手写工具目录与审计员段，新增 `BOUNDARY_SECTION` / `buildCapabilityManifest()` / `buildEnvSection()`，`assembleSections` 支持 `capability` / `env` 动态段；`agent.js` 任务模式按「工具注册表 + 档位 + 批准级别」生成能力清单（lite 档标注不可用工具）与当前环境（项目名、事实/Issue/模板计数、模式、档位、批准级别），对话模式生成能力说明传给 `runChat`；`llm.js` 不再硬编码工具清单。
 - 为什么：模型只拿到工具 schema，不知道自己的批准规则、所属项目、档位与边界；IDENTITY 里的手写清单已与 lite 档漂移（列了 `call_expert` 却不可用）。
