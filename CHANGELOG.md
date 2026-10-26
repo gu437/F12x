@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · docs：README 增加 900×900 界面组图
+- 改了什么：README「界面」改为 5 张当前版本实拍（流量 / 测试台 / 项目 / 命令面板 / Issue），统一 900×900；移除旧单图 `readme-square.png`，CI 改查 `readme-network.png` 与 `readme-testbench.png`。
+- 为什么：单张截图不足以展示导航收敛后的实际界面。
+- 验证：5 张图均为 Playwright 900×900；README 引用路径存在。
+- 提交：`de22de1`
+
 ### 2026-10-27 · chore：发布 0.4.0 与仓库标准化
 - 改了什么：版本 0.3.0 → 0.4.0（manifest / README / state / router / background 五处同步）；README 改为"浏览器原生、人类主导的授权与注入验证工作台"定位，加入 900×900 正方形 Playwright 界面图与路线图；新增专有 `LICENSE`（版权人 朝悦 / @gu437，保留所有权利）、`THIRD_PARTY_NOTICES.md`（Open Props MIT）、`SECURITY.md`、`.editorconfig`、`.github/workflows/verify.yml`（manifest + 语法 + README 资源检查）。
 - 为什么：0.4.0 是证据/身份/矩阵/序列/基线/备份/报告/AI 接入的结构性版本；对外发布需要明确版权、第三方许可、安全报告渠道与最小 CI。
