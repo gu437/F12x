@@ -295,7 +295,7 @@ const LEAF_TAGS = new Set([
 ]);
 
 // 跳过标签
-const SKIP_TAGS = new Set(["script", "style", "noscript", "svg", "path"]);
+const SKIP_TAGS = new Set(["noscript", "svg", "path"]); // script/style 保留标签（内容不进骨架）
 
 // 估算 token 数（粗暴算法：1 token ≈ 4 字符）
 function estimateTokens(str) {
@@ -326,8 +326,8 @@ function buildSkeleton(node, depth, maxContainerDepth) {
     // 文本节点
     const text = (node.nodeValue || "").trim();
     if (!text) return null;
-    // P2 修复：50→200 字符（页面注释里的敏感内容——如注释掉的 token——不再拦腰截断）
-    return text.length > 200 ? text.substring(0, 200) + "..." : text;
+    // 源码式全量骨架：文本节点不截断（这是用户要看的“前端源码”）
+    return text;
   }
 
   if (node.nodeType !== 1) return null; // 非元素节点跳过
@@ -339,20 +339,18 @@ function buildSkeleton(node, depth, maxContainerDepth) {
   if (node.attributes && node.attributes.length) {
     const attrs = [];
     const attrArr = Array.isArray(node.attributes) ? node.attributes : [];
-    const KEY_ATTRS = new Set(["id", "class", "type", "placeholder", "name", "href", "src", "action", "method",
-      "value", "autocomplete", "pattern", "maxlength", "target", "rel", "formaction", "data-url", "data-id",
-      "data-action", "data-endpoint", "data-api"]);
+    // 源码式：保留全部属性（不再白名单过滤）
     for (let i = 0; i + 1 < attrArr.length; i += 2) {
       const name = String(attrArr[i] || "");
-      let val = String(attrArr[i + 1] || "");
-      if (!val) continue;
-      if (KEY_ATTRS.has(name) || name.startsWith("data-") || name.startsWith("aria-")) {
-        // 火力全开：value/data-* 属性不再截断（原 50 字符泄敏截断已移除）
-        attrs.push(`${name}="${val}"`);
-      }
+      const val = String(attrArr[i + 1] || "");
+      if (!name) continue;
+      attrs.push(`${name}="${val}"`);
     }
     if (attrs.length) item.attrs = attrs;
   }
+
+  // script/style：只保留标签与属性（内容走「脚本」页，避免骨架被源码灌爆）
+  if (tag === "script" || tag === "style") { item.text = ""; return item; }
 
   // 是否有子节点
   const children = node.children || node.childNodes;
@@ -372,7 +370,7 @@ function buildSkeleton(node, depth, maxContainerDepth) {
       if (child.nodeType === 3) text += (child.nodeValue || "");
     }
     text = text.trim();
-    if (text) item.text = text.length > 100 ? text.substring(0, 100) + "..." : text;
+    if (text) item.text = text; // 源码式：不截断
     if (children.length > 0) item.childCount = children.length;
     return item;
   }
@@ -393,49 +391,29 @@ function buildSkeleton(node, depth, maxContainerDepth) {
       if (child.nodeType === 3) directText += (child.nodeValue || "");
     }
     directText = directText.trim();
-    if (directText) item.text = directText.length > 50 ? directText.substring(0, 50) + "..." : directText;
+    if (directText) item.text = directText; // 源码式：不截断
   }
 
   return item;
 }
 
 export async function get_page_skeleton() {
-  // 获取 DOM（depth=10 确保足够深）
-  const result = await sendCDP("DOM.getDocument", { depth: 10, pierce: true });
+  // 源码式全量骨架：取完整 DOM（depth=-1），不设深度/token/文本上限
+  const result = await sendCDP("DOM.getDocument", { depth: -1, pierce: true });
 
   if (!result || !result.root) {
     return { error: "无法获取 DOM 树" };
   }
 
-  // P1 修复：深度自适应（替代写死 8——SPA 常见 10+ 层嵌套被截断）
-  // 策略：先按预算试深度 12，token 超限则降级重建（深度减半重试）
-  // 火力全开：骨架预算 2000 → 10000（完整骨架优先，超限才降深/截断）
-  let skeleton = null, json = "", tokens = 0;
-  for (let depth = 12; depth >= 2; depth = Math.floor(depth / 2)) {
-    skeleton = buildSkeleton(result.root, 0, depth);
-    if (!skeleton) return { error: "DOM 树为空" };
-    json = JSON.stringify(skeleton);
-    tokens = estimateTokens(json);
-    if (tokens <= 10000) break; // 预算内——用当前深度
-  }
+  const skeleton = buildSkeleton(result.root, 0, Infinity);
+  if (!skeleton) return { error: "DOM 树为空" };
 
-  // P1 修复：token 超限时截断（替代"只 warning 不截断"——模型被灌爆）
-  const rawTokens = tokens;
-  let truncated = false;
-  if (tokens > 10000) {
-    truncated = true;
-    json = json.substring(0, 10000 * 4) + `...\n// 骨架超预算（${tokens} token）——已截断，可用 search_dom 定向探索`;
-    skeleton = json;
-    tokens = 10000;
-  }
-
-  return {
-    skeleton,
-    tokens,
-    truncated,
-    warning: truncated ? `骨架超预算已截断（原始 ${rawTokens} token）` : undefined
-  };
+  const json = JSON.stringify(skeleton);
+  const tokens = estimateTokens(json);
+  // 仅报告体量，绝不截断（上限由用户/模型自行判断）
+  return { skeleton, tokens, truncated: false };
 }
+
 
 // ============================================================
 // 工具 2：eval_js(code, mode)

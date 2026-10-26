@@ -1782,3 +1782,29 @@ body {
 .ctx-fact span { flex: 1; color: var(--text-2, #444); }
 .ctx-fact em { flex: none; color: var(--text-4, #999); font-style: normal; }
 .ctx-meta { margin-top: 6px; font-size: 10px; color: var(--text-4, #888); }
+
+/* 骨架：源码式高亮 + 行号 */
+.sk-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 2px 6px; }
+.sk-stat { font-size: 10px; color: var(--text-4); }
+.sk-wrap-tg { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text-3); cursor: pointer; margin: 0; }
+.sk-wrap-tg input { width: auto; margin: 0; }
+.sk-wrap {
+  font-family: var(--mono); font-size: 10.5px; line-height: 1.7;
+  padding: 2px 0 6px;
+}
+.sk-wrap.sk-nowrap { overflow-x: auto; }
+.sk-wrap.sk-nowrap .sk-code { white-space: pre; word-break: normal; }
+.sk-wrap.sk-nowrap .sk-line { width: max-content; min-width: 100%; }
+.sk-line { display: flex; align-items: flex-start; gap: 8px; }
+.sk-code { white-space: pre-wrap; word-break: break-word; }
+.sk-line:hover { background: var(--surface-2); }
+.sk-ln {
+  flex: none; width: 34px; text-align: right; color: var(--text-4, #9aa0a6);
+  user-select: none; padding-right: 3px; border-right: 1px solid var(--surface-4); margin-right: 3px;
+}
+.sk-code { flex: 1; min-width: 0; }
+.sk-punct { color: #8a94a6; }
+.sk-tag { color: #2f6fdb; font-weight: 600; }
+.sk-attr { color: #9a6700; }
+.sk-val { color: #1a7f37; }
+.sk-text { color: var(--text-2, #444); }

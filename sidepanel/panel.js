@@ -423,33 +423,71 @@ async function runSkeleton() {
   renderSkeleton(r.skeleton);
 }
 
-function renderSkeleton(node, container, depth = 0) {
-  const box = $("page-tree");
-  if (depth === 0) { box.innerHTML = ""; container = box; }
-  if (!node) return;
+const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+
+function skEsc(s) { return esc(String(s == null ? "" : s)); }
+
+// 单行：<tag attr="v" ...>（不截断属性）
+function skOpenTag(node) {
+  let s = '<span class="sk-punct">&lt;</span><span class="sk-tag">' + skEsc(node.tag) + '</span>';
+  for (const a of (node.attrs || [])) {
+    const i = String(a).indexOf("=");
+    const name = i >= 0 ? String(a).slice(0, i) : String(a);
+    const val = i >= 0 ? String(a).slice(i + 1) : "";
+    s += ' <span class="sk-attr">' + skEsc(name) + '</span>';
+    if (val) s += '<span class="sk-punct">=</span><span class="sk-val">' + skEsc(val) + '</span>';
+  }
+  s += '<span class="sk-punct">&gt;</span>';
+  return s;
+}
+function skCloseTag(node) {
+  return '<span class="sk-punct">&lt;/</span><span class="sk-tag">' + skEsc(node.tag) + '</span><span class="sk-punct">&gt;</span>';
+}
+
+// 展开成源码行（depth 交给 CSS 步进，不再用空格缩进）
+function skLines(node, depth, out) {
   if (typeof node === "string") {
-    const div = document.createElement("div");
-    div.className = "tree-line";
-    div.style.paddingLeft = depth * 14 + "px";
-    div.innerHTML = `<span class="tk-text">${esc(node)}</span>`;
-    container.appendChild(div);
+    out.push({ d: depth, html: '<span class="sk-text">' + skEsc(node) + '</span>' });
     return;
   }
-  const line = document.createElement("div");
-  line.className = "tree-line";
-  line.style.paddingLeft = depth * 14 + "px";
-  let label = `<span class="tk-tag">&lt;${esc(node.tag)}&gt;</span>`;
-  if (node.attrs && node.attrs.length) label += ` <span class="tk-attr">${node.attrs.slice(0, 4).map(a => esc(a)).join(" ")}${node.attrs.length > 4 ? " …" : ""}</span>`;
-  if (node.text) label += ` <span class="tk-text">${esc(node.text.substring(0, 40))}</span>`;
-  if (node.children && node.children.length) label += ` <span class="tk-text">(${node.children.length})</span>`;
-  line.innerHTML = label;
-  container.appendChild(line);
-  if (node.children && node.children.length) {
-    const childBox = document.createElement("div");
-    childBox.className = "tree-node";
-    container.appendChild(childBox);
-    for (const c of node.children) renderSkeleton(c, childBox, depth + 1);
+  if (!node || !node.tag) return;
+  if (node.tag === "#document") {
+    for (const c of (node.children || [])) skLines(c, depth, out);
+    return;
   }
+  const open = skOpenTag(node);
+  const kids = node.children || [];
+  const text = node.text || "";
+  if (!kids.length) {
+    if (VOID_TAGS.has(node.tag)) {
+      out.push({ d: depth, html: open });
+    } else if (!text) {
+      out.push({ d: depth, html: open + skCloseTag(node) });
+    } else {
+      out.push({ d: depth, html: open + '<span class="sk-text">' + skEsc(text) + '</span>' + skCloseTag(node) });
+    }
+    return;
+  }
+  out.push({ d: depth, html: open });
+  // 子节点里已有文本节点时不再重复 item.text（buildSkeleton 两种来源会各带一份）
+  const hasTextChild = kids.some((k) => typeof k === "string");
+  if (text && !hasTextChild) out.push({ d: depth + 1, html: '<span class="sk-text">' + skEsc(text) + '</span>' });
+  for (const c of kids) skLines(c, depth + 1, out);
+  out.push({ d: depth, html: skCloseTag(node) });
+}
+
+function renderSkeleton(node) {
+  const box = $("page-tree");
+  if (!node) { box.innerHTML = '<div class="placeholder">骨架为空</div>'; return; }
+  const lines = [];
+  skLines(node, 0, lines);
+  const body = lines.map((ln, i) => '<div class="sk-line"><span class="sk-ln">' + (i + 1) + '</span><span class="sk-code" style="padding-left:' + (Math.min(ln.d, 14) * 8) + 'px">' + ln.html + '</span></div>').join("");
+  box.innerHTML = '<div class="sk-bar"><span class="sk-stat">' + lines.length + ' 行 · 全量属性 / 文本</span>'
+    + '<label class="sk-wrap-tg"><input type="checkbox" id="sk-wrap" checked /> 自动换行</label></div>'
+    + '<div class="sk-wrap">' + body + '</div>';
+  const tg = box.querySelector("#sk-wrap");
+  const wrap = box.querySelector(".sk-wrap");
+  if (tg && wrap) tg.addEventListener("change", () => wrap.classList.toggle("sk-nowrap", !tg.checked));
 }
 
 async function runFormRecon() {
