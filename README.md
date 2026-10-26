@@ -27,7 +27,7 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 | --- | --- |
 | 页面 | Inspect 点选生成选择器卡、采集完整 DOM 骨架（全深度 / 全部属性与文本、源码式高亮 + 行号 + 自动换行）、表单枚举、视口 / 整页截图、URL 导航、CSS 选择器搜索 DOM、JS 执行台（支持顶层 await + 历史） |
 | 网络 | 实时请求表（缓冲 2000 条）：默认每行只显示方法 / 状态 / URL（唯一标识），类型 / 大小 / 来源在详情「常规」；过滤（URL 正则、元数据搜索、方法 / 状态 / 域 / 类型）、列配置（持久化）、分页（50/页）、请求详情（常规 + 请求头 / 请求体 / 响应头 / 响应体 / 控制台——控制台页签展示**全局最近 60 条**日志，不按请求过滤） |
-| 请求 | **Repeater**：自定义方法 / URL / 头 / 体发送、与上次响应对比、→ Comparer / Decoder、历史（可"存到黑板"）；**Intruder**：`{payload}` 占位注入 URL / 请求体 / 请求头（注入头字段）、自定义静态请求头、payload 文本或文件导入、并发 / 限速 / 停止（真中断）、摘要与逐条结果；**Comparer**：A/B 文本对比、一键交换；**Decoder**：Base64 / URL / Hex 编解码，输出"→ 再编码"链式转换 |
+| 请求 | **Repeater**：**身份选择（Cookie + localStorage/sessionStorage + 认证头，同源事务应用/恢复）**、自定义方法 / URL / 头 / 体发送、与上次响应对比、→ Comparer / Decoder、历史（可"存到黑板"）；**Intruder**：`{payload}` 占位注入 URL / 请求体 / 请求头（注入头字段）、自定义静态请求头、payload 文本或文件导入、并发 / 限速 / 停止（真中断）、摘要与逐条结果；**Comparer**：A/B 文本对比、一键交换；**Decoder**：Base64 / URL / Hex 编解码，输出"→ 再编码"链式转换 |
 | Cookie | 域名 / 名称过滤、显示值开关、刷新；**列表只显示名称 / 域 / 标志，点击行在下方详情看完整值 / 路径 / 标志**；值可点击复制、`复制全部`；可编辑 / 删除（CDP 写回，失败如实报错） |
 | 脚本 | 当前标签页已加载 JS 列表（外链 / 内联标识）、跨脚本源码搜索（命中数 + 首行）、源码行号与命中高亮、上一处/下一处跳转、复制 / 下载 / 送片段给 AI |
 | 项目 | **唯一持久化容器（唯一创建/管理入口）**：列表（搜索 / 新建 / 当前标记 / 四项计数）、详情页签（黑板 / 证据 / Issue / 模板 / 会话），内联新增与编辑；`设为当前` / `导出 JSON` / `重命名` / `删除`；模板`运行`先选会话（可新建）再下发；事实可`送入 AI`；项目名唯一（重名拒绝） |
@@ -105,7 +105,7 @@ AI 任务专用（不可手动直调）：`upsert_fact` `get_fact` `rebuttal_che
 | --- | --- |
 | LLM | `llmConfig`（引擎唯一读取点）、`llm_endpoints`、`f12x_models_v1`（模型条目）、`f12x_model_active`（默认模型 id）；旧版独立键 `llm_api_key` / `llm_base_url` / `llm_model` 仍兼容 |
 | 行为 | `approvalLevel`（`read_auto_write_approve` 默认 / `full_auto` / `all_approve`）、`f12x_thinking_limit`（思考字符上限，0=不限）、`f12x_context_window`（压缩窗口）、`f12x_guard_profile`（auto / lite / full）、`f12x_local_warm`（本地空闲保活）、`f12x_ai_mode`·`f12x_ai_nothink`（localStorage，会话 UI 记忆） |
-| 数据 | `projects_index_v2`（项目索引）、`project:<id>`（项目：黑板 / Issue / 模板）、`evidence_index_v1` + `evidence:<id>`（证据元数据/正文）、`active_project_v1`、`conversations_index_v2`（会话元数据索引）、`conv:<convId>`（单会话全文）、`active_conv_v2`、`skills_data`、`f12x_repeater_history_v1`、`f12x_pending_approval_v1`、`f12x_intercept_snapshot_v1`、`shots_index_v1`（截图索引） |
+| 数据 | `projects_index_v2`（项目索引）、`project:<id>`（项目：黑板 / Issue / 模板）、`evidence_index_v1` + `evidence:<id>`（证据元数据/正文）、`identity_index_v1` + `identity:<id>`（身份档案）、`identity_txn_v1`（身份切换临时快照）、`active_project_v1`、`conversations_index_v2`（会话元数据索引）、`conv:<convId>`（单会话全文）、`active_conv_v2`、`skills_data`、`f12x_repeater_history_v1`、`f12x_pending_approval_v1`、`f12x_intercept_snapshot_v1`、`shots_index_v1`（截图索引） |
 | 会话级 | `workspace:{convId}`、`spill:{convId}:{key}` + `spill_index:{convId}`、`shot:<convId>:<key>` + `shot_index:<convId>`（会话截图，无上限） |
 
 淘汰与上限：会话 100 个（保留活跃会话）、单会话消息 400 条、`events` 500 条、黑板事实 500 条 / 项目、工作区条目 2000 条、审计 200 条、网络 2000 条、控制台 200 条、溢出区 30 条 / 会话（**截图不设上限**，随会话删除）。旧版全量数组 `conversations_v2` 会在扩展启动时**自动迁移**为「索引 + 每会话一键」。

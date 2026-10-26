@@ -1,5 +1,6 @@
 // F12x memory 模块（模块化拆分，纯搬移零逻辑变更）
 import { deleteProjectEvidence } from "./evidence.js";
+import { deleteProjectIdentities } from "./identity.js";
 
 export const PROJECTS_KEY = "projects_v2"; // 旧：单键 map，仅用于迁移
 export const PROJECTS_INDEX_KEY = "projects_index_v2";
@@ -134,6 +135,7 @@ export function deleteProject(projectId) {
 async function deleteProjectInner(projectId) {
   const index = (await readProjectIndex()).filter((m) => m.id !== projectId);
   try { await deleteProjectEvidence(projectId); } catch (e) { /* 证据清理失败不阻断项目删除 */ }
+  try { await deleteProjectIdentities(projectId); } catch (e) { /* 身份清理失败不阻断项目删除 */ }
   await chrome.storage.local.set({ [PROJECTS_INDEX_KEY]: index });
   await chrome.storage.local.remove(projectKey(projectId));
   // 解绑会话（分键布局：逐个改 projectId，不再依赖旧的全量数组）

@@ -1852,3 +1852,14 @@ body {
 .ev-preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .ev-sec-title { font-size: 11px; font-weight: 600; color: var(--text-2); margin: 8px 0 3px; }
 .ev-pre { margin: 0; max-height: 140px; overflow: auto; background: var(--surface-2); border: 1px solid var(--surface-4); border-radius: 6px; padding: 6px 8px; font-family: var(--mono); font-size: 10px; white-space: pre-wrap; word-break: break-all; }
+
+/* 身份（方案 009 / P2） */
+.rep-idbar { margin-bottom: 4px; }
+.idm-hint { font-size: 10.5px; color: var(--text-4); margin-bottom: 6px; line-height: 1.5; }
+.idm-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; max-height: 240px; overflow: auto; }
+.idm-item { border: 1px solid var(--surface-4); border-radius: 8px; padding: 6px 8px; }
+.idm-name { font-size: 12px; font-weight: 600; }
+.idm-meta { font-size: 10px; color: var(--text-4); margin-top: 2px; }
+.idm-actions { display: flex; gap: 6px; margin-top: 4px; }
+.idm-new { border-top: 1px dashed var(--surface-4); padding-top: 6px; display: flex; flex-direction: column; gap: 5px; }
+.idm-new label { font-size: 11px; color: var(--text-3); }

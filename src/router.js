@@ -17,7 +17,7 @@ import {
   debuggerAttach, debuggerDetach, get_page_skeleton, eval_js, search_dom,
   get_network_requests, get_network_request_detail, get_console_logs,
   get_cookies, get_script_list, get_script_content, search_scripts, sendCDP,
-  navigate, highlight_element, screenshot, formRecon,
+  navigate, highlight_element, screenshot, formRecon, capture_identity_state,
   inspectEnable, inspectDisable, interceptSetMode, interceptAction, interceptReleaseAll,
   metadataSearch, collectElementCodeBySelector
 } from "./debugger.js";
@@ -30,6 +30,7 @@ import {
   addProjectTemplate, removeProjectTemplate, setActiveProjectId, getProject
 } from "./memory.js";
 import { saveEvidence, listEvidence, getEvidence, removeEvidence, markEvidenceIssue } from "./evidence.js";
+import { saveIdentity, listIdentities, getIdentity, removeIdentity } from "./identity.js";
 
 // 持久数据必须落在项目里：没有项目就明确报错（项目只在项目页创建）
 async function requireActiveProjectId(explicitId) {
@@ -318,7 +319,9 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "tool:replay") {
     (async () => {
       await debuggerAttach().catch(() => {});
-      const r = await dispatchTool("replay_request", { url: message.url, method: message.method || "GET", headers: message.headers || {}, body: message.body || null }, { mode: "manual" });
+      const identity = message.identityId ? await getIdentity(message.identityId) : null;
+      if (message.identityId && !identity) return sendResponse({ ok: false, error: "身份不存在", code: "NOT_FOUND" });
+      const r = await dispatchTool("replay_request", { url: message.url, method: message.method || "GET", headers: message.headers || {}, body: message.body || null, identity }, { mode: "manual" });
       busEmit("audit", { ts: Date.now(), actor: "user", action: `Repeater 发送 ${message.url}`, result: r?.error ? String(r.error).substring(0, 120) : `状态 ${r.status}` });
       sendResponse({ ok: !r.error, ...r });
     })();
@@ -496,6 +499,66 @@ export function handleMessage(message, sender, sendResponse) {
       try {
         const p = await ensureActiveProject();
         sendResponse({ ok: true, project: p ? { id: p.id, name: p.name } : null, issues: p ? (p.issues || []) : [] });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "identity:list") {
+    (async () => {
+      try {
+        const pid = message.projectId || await requireActiveProjectId();
+        const res = await listIdentities(pid || null);
+        sendResponse({ ok: true, ...res });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "identity:get") {
+    (async () => {
+      try {
+        const idn = await getIdentity(message.id);
+        if (!idn) return sendResponse({ ok: false, error: "身份不存在", code: "NOT_FOUND" });
+        sendResponse({ ok: true, identity: idn });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "identity:capture") {
+    (async () => {
+      try {
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目（身份必须归属项目）", code: "NOT_FOUND" });
+        if (!message.name) return sendResponse({ ok: false, error: "身份名称必填", code: "INVALID" });
+        await debuggerAttach().catch(() => {});
+        const cap = await capture_identity_state({ url: message.url });
+        if (cap.error) return sendResponse({ ok: false, error: cap.error, code: "CDP_ERROR" });
+        const res = await saveIdentity({
+          projectId: pid, name: message.name, sourceUrl: cap.sourceUrl,
+          cookies: cap.cookies, storage: cap.storage, headers: message.headers || {},
+        });
+        if (res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true, id: res.id, meta: res.meta, cookieCount: res.meta.cookieCount, storageKeys: res.meta.storageKeys });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "identity:save") {
+    (async () => {
+      try {
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目（身份必须归属项目）", code: "NOT_FOUND" });
+        const res = await saveIdentity({ ...message, projectId: pid });
+        if (res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true, id: res.id, meta: res.meta });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "identity:remove") {
+    (async () => {
+      try {
+        await removeIdentity(message.id);
+        sendResponse({ ok: true });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;

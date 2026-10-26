@@ -145,6 +145,11 @@
 
           <!-- Repeater -->
           <div id="req-repeater" class="req-tab active">
+            <div class="toolbar wrap rep-idbar">
+              <label class="mini-label">身份</label>
+              <select id="rep-identity" class="select-mini"><option value="">当前会话</option></select>
+              <button id="rep-identity-manage" class="mini-btn">管理身份</button>
+            </div>
             <div class="toolbar wrap">
               <select id="rep-method" class="select-mini">
                 <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>OPTIONS</option><option>HEAD</option>

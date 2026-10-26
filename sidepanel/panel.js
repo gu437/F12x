@@ -180,7 +180,7 @@ const app = {
     columns: ["method", "status", "url"], // 默认只看标识列；类型/大小/来源在详情「常规」
     consoleLogs: []
   },
-  rep: { lastResponse: null, history: [], prevBody: "" },
+  rep: { lastResponse: null, history: [], prevBody: "", identityId: "" },
   jsHistory: [],
   currentView: "page",
   aiRunning: false,
@@ -1159,6 +1159,102 @@ function showInterceptAction(item) {
 // ============================================================
 // ===== 请求模块（Burp 四件套） =====
 // ============================================================
+// ============================================================
+// ===== 身份（方案 009 / P2：项目级 Cookie + storage + 认证头） =====
+// ============================================================
+function identityProjectId() {
+  if (app.currentProject && app.currentProject.id) return app.currentProject.id;
+  if (app.projDetail && app.projDetail.project) return app.projDetail.project.id;
+  return "";
+}
+
+async function refreshIdentitySelect() {
+  const sel = $("rep-identity");
+  if (!sel) return;
+  const pid = identityProjectId();
+  if (!pid) {
+    sel.innerHTML = '<option value="">未选项目</option>';
+    return;
+  }
+  const r = await api("identity:list", { projectId: pid });
+  if (!r.ok) return;
+  const rows = r.identities || [];
+  const prev = sel.value || app.rep.identityId || "";
+  sel.innerHTML = '<option value="">当前会话（不切换身份）</option>'
+    + rows.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}（Cookie ${x.cookieCount} / storage ${x.storageKeys}）</option>`).join("");
+  sel.value = rows.some((x) => x.id === prev) ? prev : "";
+  app.rep.identityId = sel.value;
+}
+
+async function openIdentityManager() {
+  const pid = identityProjectId();
+  if (!pid) return toast("请先选择项目（身份必须归属项目）");
+  const r = await api("identity:list", { projectId: pid });
+  const rows = r.ok ? (r.identities || []) : [];
+  openModal(`<h3>身份管理</h3>
+    <div class="idm-hint">身份 = Cookie + localStorage/sessionStorage + 认证头；只在当前标签页同源请求时临时应用，结束后恢复。</div>
+    <div class="idm-list">${rows.length ? rows.map((x) => `
+      <div class="idm-item">
+        <div class="idm-name">${esc(x.name)}</div>
+        <div class="idm-meta">Cookie ${x.cookieCount} · storage ${x.storageKeys} · 头 ${(x.headerKeys || []).length} · ${new Date(x.updatedAt || 0).toLocaleString()}</div>
+        <div class="idm-actions"><button class="mini-btn" data-idm-headers="${esc(x.id)}">编辑头</button><button class="mini-btn danger" data-idm-del="${esc(x.id)}">删除</button></div>
+      </div>`).join("") : '<div class="placeholder">还没有身份：抓取当前登录态，或用用户 B 登录后再抓一个</div>'}</div>
+    <div class="idm-new">
+      <label>抓取当前会话为新身份</label>
+      <input id="idm-name" class="text-input" placeholder="名称（如 用户A / 管理员）" />
+      <textarea id="idm-headers" class="code-input" rows="2" placeholder="认证头（可选，每行 key: value）&#10;Authorization: Bearer ..."></textarea>
+      <button id="idm-capture" class="ctrl-btn primary">抓取 Cookie + storage</button>
+    </div>
+    <div class="modal-actions"><button id="idm-close" class="primary">关闭</button></div>`);
+  const box = document.querySelector(".modal-box");
+  if (!box) return;
+  box.querySelector("#idm-close").addEventListener("click", () => { closeModal(); refreshIdentitySelect(); });
+  box.querySelector("#idm-capture").addEventListener("click", async () => {
+    const name = (($("idm-name") && $("idm-name").value) || "").trim();
+    if (!name) return toast("身份名称必填");
+    const headers = parseHeaderLines($("idm-headers") ? $("idm-headers").value : "");
+    const rr = await api("identity:capture", { projectId: pid, name, headers });
+    if (!rr.ok) return toast("抓取失败：" + (rr.error || ""));
+    closeModal();
+    await refreshIdentitySelect();
+    toast(`已抓取身份：Cookie ${rr.cookieCount} / storage ${rr.storageKeys}`);
+    openIdentityManager();
+  });
+  box.querySelectorAll("[data-idm-headers]").forEach((b) => b.addEventListener("click", () => identityEditHeaders(b.dataset.idmHeaders)));
+  box.querySelectorAll("[data-idm-del]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("删除该身份？（不影响当前浏览器会话）")) return;
+    const rr = await api("identity:remove", { id: b.dataset.idmDel });
+    if (!rr.ok) return toast("删除失败：" + (rr.error || ""));
+    closeModal();
+    await refreshIdentitySelect();
+    openIdentityManager();
+  }));
+}
+
+async function identityEditHeaders(id) {
+  const r = await api("identity:get", { id });
+  if (!r.ok) return toast("读取身份失败：" + (r.error || ""));
+  const idn = r.identity;
+  openModal(`<h3>编辑认证头 · ${esc(idn.name)}</h3>
+    <label>请求头（每行 key: value；Cookie 由档案内 Cookie 自动注入）</label>
+    <textarea id="idm-edit-headers" class="code-input" rows="5">${esc(headersToText(idn.headers))}</textarea>
+    <div class="modal-actions"><button id="idm-edit-cancel">取消</button><button id="idm-edit-save" class="primary">保存</button></div>`);
+  const box = document.querySelector(".modal-box");
+  box.querySelector("#idm-edit-cancel").addEventListener("click", () => { closeModal(); openIdentityManager(); });
+  box.querySelector("#idm-edit-save").addEventListener("click", async () => {
+    const headers = parseHeaderLines($("idm-edit-headers").value);
+    const rr = await api("identity:save", {
+      projectId: idn.projectId, id: idn.id, name: idn.name, description: idn.description,
+      sourceUrl: idn.sourceUrl, cookies: idn.cookies, storage: idn.storage, headers,
+    });
+    if (!rr.ok) return toast("保存失败：" + (rr.error || ""));
+    closeModal();
+    await refreshIdentitySelect();
+    toast("认证头已保存");
+    openIdentityManager();
+  });
+}
+
 function initRequestModule() {
   document.querySelectorAll('#view-request .tabs .tab').forEach(t => {
     t.addEventListener("click", () => {
@@ -1169,6 +1265,9 @@ function initRequestModule() {
 
   // Repeater
   $("rep-send").addEventListener("click", repSend);
+  if ($("rep-identity")) $("rep-identity").addEventListener("change", () => { app.rep.identityId = $("rep-identity").value; });
+  if ($("rep-identity-manage")) $("rep-identity-manage").addEventListener("click", openIdentityManager);
+  refreshIdentitySelect().catch(() => {});
   if ($("rep-evidence")) $("rep-evidence").addEventListener("click", saveRepeaterEvidence);
   // Repeater 历史存到项目黑板
   $("rep-save-site").addEventListener("click", async () => {
@@ -1272,9 +1371,10 @@ async function repSend() {
   const prevOut = $("rep-result").textContent.trim();
   if (prevOut) app.rep.prevBody = prevOut;
   $("rep-result-label").textContent = "响应（发送中…）";
-  const r = await api("tool:replay", { url, method, headers, body });
+  const r = await api("tool:replay", { url, method, headers, body, identityId: app.rep.identityId || undefined });
   app.rep.lastResponse = r;
-  $("rep-result-label").textContent = `响应（状态 ${r.status ?? "-"}）${r.viaPage ? " · 会话 Cookie" : " · 扩展 fetch"}`;
+  const idnName = app.rep.identityId ? (($("rep-identity") && $("rep-identity").selectedOptions[0] && $("rep-identity").selectedOptions[0].textContent) || "身份") : "";
+  $("rep-result-label").textContent = `响应（状态 ${r.status ?? "-"}）${r.viaPage ? " · 会话 Cookie" : " · 扩展 fetch"}${idnName ? " · " + idnName : ""}`;
   if (!r.ok) {
     $("rep-result").innerHTML = `<span class="err">${esc(r.error)}</span>`;
     return;
@@ -1834,6 +1934,7 @@ async function loadProjects(focusId) {
   if (r.ok) { app.projects = r.projects || []; app.currentProject = r.project || null; }
   renderProjectSelector();
   renderProjectList();
+  refreshIdentitySelect().catch(() => {});
   // 默认停在项目列表；只有显式传入 focusId 才打开详情
   if (focusId) await openProjectDetail(focusId);
   else { showProjectBrowser(); renderProjectList(); }

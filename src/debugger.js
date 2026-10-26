@@ -1523,12 +1523,135 @@ export async function clearNavIndicator() {
 }
 
 // ============================================================
+// 身份快照（方案 009 / P2）
+// Cookie 走 chrome.cookies（含 httpOnly）；storage 走页面 Runtime.evaluate；
+// 应用/恢复都在 finally 中还原，避免污染用户当前会话。
+// ============================================================
+const IDENTITY_TXN_KEY = "identity_txn_v1";
+
+function cookieUrl(c, origin) {
+  const domain = String(c.domain || "").replace(/^\./, "");
+  const scheme = c.secure ? "https" : "http";
+  try {
+    const u = new URL(origin);
+    return scheme + "://" + (domain || u.hostname) + (c.path || "/");
+  } catch (e) {
+    return origin;
+  }
+}
+
+async function readPageStorage() {
+  const expr = `(() => {
+    const out = { local: {}, session: {} };
+    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); out.local[k] = localStorage.getItem(k); } } catch (e) {}
+    try { for (let i = 0; i < sessionStorage.length; i++) { const k = sessionStorage.key(i); out.session[k] = sessionStorage.getItem(k); } } catch (e) {}
+    return JSON.stringify(out);
+  })()`;
+  const r = await sendCDP("Runtime.evaluate", { expression: expr, returnByValue: true });
+  try { return JSON.parse(r?.result?.value || "{}"); } catch (e) { return { local: {}, session: {} }; }
+}
+
+async function writePageStorage(s) {
+  const data = JSON.stringify({ local: (s && s.local) || {}, session: (s && s.session) || {} });
+  const expr = `(() => {
+    const data = ${data};
+    try { localStorage.clear(); for (const k of Object.keys(data.local)) localStorage.setItem(k, data.local[k]); } catch (e) {}
+    try { sessionStorage.clear(); for (const k of Object.keys(data.session)) sessionStorage.setItem(k, data.session[k]); } catch (e) {}
+    return true;
+  })()`;
+  await sendCDP("Runtime.evaluate", { expression: expr, returnByValue: true });
+}
+
+async function replaceCookies(cookies, origin) {
+  const current = await chrome.cookies.getAll({ url: origin }).catch(() => []);
+  for (const c of current) {
+    try { await chrome.cookies.remove({ url: cookieUrl(c, origin), name: c.name }); } catch (e) {}
+  }
+  const errors = [];
+  for (const c of (cookies || [])) {
+    if (!c || !c.name) continue;
+    const details = {
+      url: cookieUrl(c, origin),
+      name: c.name,
+      value: String(c.value == null ? "" : c.value),
+      path: c.path || "/",
+      secure: !!c.secure,
+      httpOnly: !!c.httpOnly,
+      sameSite: c.sameSite || "unspecified",
+    };
+    const domain = String(c.domain || "");
+    if (domain && domain.startsWith(".")) details.domain = domain;
+    if (!c.session && c.expirationDate != null) details.expirationDate = Number(c.expirationDate);
+    try {
+      const r = await chrome.cookies.set(details);
+      if (!r) errors.push(c.name);
+    } catch (e) { errors.push(c.name + ":" + e.message); }
+  }
+  return errors;
+}
+
+export async function capture_identity_state({ url } = {}) {
+  const target = url || debuggeeUrl;
+  if (!target) return { error: "没有已附加的标签页" };
+  try {
+    const cookies = await chrome.cookies.getAll({ url: target });
+    const storage = await readPageStorage();
+    return { ok: true, cookies, storage, sourceUrl: target };
+  } catch (e) {
+    return { error: "抓取身份失败: " + e.message };
+  }
+}
+
+export async function withIdentityState(identity, fn) {
+  if (!debuggee || !debuggeeUrl) return { error: "身份重放需要先附加标签页" };
+  const origin = new URL(debuggeeUrl).origin;
+  // 上次崩溃残留：先恢复，再快照
+  try {
+    const old = await chrome.storage.local.get(IDENTITY_TXN_KEY);
+    const txn = old[IDENTITY_TXN_KEY];
+    if (txn && txn.origin === origin) {
+      await replaceCookies(txn.cookies || [], origin).catch(() => {});
+      await writePageStorage(txn.storage || {}).catch(() => {});
+      await chrome.storage.local.remove(IDENTITY_TXN_KEY);
+    }
+  } catch (e) { /* 恢复失败不阻断本次 */ }
+  const prevCookies = await chrome.cookies.getAll({ url: origin }).catch(() => []);
+  const prevStorage = await readPageStorage().catch(() => ({ local: {}, session: {} }));
+  await chrome.storage.local.set({ [IDENTITY_TXN_KEY]: { at: Date.now(), origin, cookies: prevCookies, storage: prevStorage } });
+  try {
+    const errs = await replaceCookies(identity.cookies || [], origin);
+    if (errs.length) return { error: "部分 Cookie 写入失败: " + errs.join(", ") };
+    await writePageStorage(identity.storage || {});
+    return await fn();
+  } catch (e) {
+    return { error: "身份应用失败: " + e.message };
+  } finally {
+    let restored = true;
+    try { await replaceCookies(prevCookies, origin); } catch (e) { restored = false; }
+    try { await writePageStorage(prevStorage); } catch (e) { restored = false; }
+    // 恢复失败保留 txn，下次应用身份前会先尝试恢复
+    if (restored) await chrome.storage.local.remove(IDENTITY_TXN_KEY).catch(() => {});
+  }
+}
+
+// ============================================================
 // 工具 9：replay_request（对标 F12"编辑重发"/Burp Repeater）
 // 扩展级 fetch（host_permissions <all_urls>）→ 不受页面 CORS 限制，跨域可用
 // ============================================================
-export async function replay_request({ url, method = "GET", headers = {}, body = null }) {
+export async function replay_request(args = {}) {
+  if (!args.identity) return replayInner(args);
+  try {
+    if (!debuggeeUrl || new URL(args.url).origin !== new URL(debuggeeUrl).origin) {
+      return { error: "身份重放仅支持当前标签页同源；跨域请求不带身份" };
+    }
+  } catch (e) { return { error: "URL 无效" }; }
+  return withIdentityState(args.identity, () => replayInner(args));
+}
+
+async function replayInner({ url, method = "GET", headers = {}, body = null, identity = null }) {
   if (!url || typeof url !== "string") return { error: "url 必填" };
   markUserRequest(url); // 来源标记：本次重放产生的页面请求记为 source:"user"
+  const mergedHeaders = { ...(headers || {}), ...((identity && identity.headers) || {}) };
   // 功能残缺 P0-1：Cookie 是 Fetch 规范 forbidden header name——
   // 扩展 fetch 手动设置的 Cookie 头被静默丢弃（原 cookies.getAll 拼头从未生效）。
   // 正解：同源重放在【页面上下文】执行 fetch（credentials:"include"）——
@@ -1556,7 +1679,7 @@ export async function replay_request({ url, method = "GET", headers = {}, body =
         try {
           const r = await fetch(${JSON.stringify(url)}, {
             method: ${JSON.stringify(String(method).toUpperCase())},
-            headers: ${JSON.stringify(headers || {})},
+            headers: ${JSON.stringify(mergedHeaders)},
             body: ${body !== null ? JSON.stringify(String(body)) : "undefined"},
             credentials: "include",
             redirect: "follow",
@@ -1604,7 +1727,7 @@ export async function replay_request({ url, method = "GET", headers = {}, body =
     const timer = setTimeout(() => controller.abort(), 15000);
     const resp = await fetch(url, {
       method: String(method).toUpperCase(),
-      headers: { ...(headers || {}) },
+      headers: { ...mergedHeaders },
       body: body !== null ? String(body) : undefined,
       redirect: "manual", // 跳转链本身是攻击面（开放重定向/SSRF 探测）——3xx 可见
       signal: controller.signal
