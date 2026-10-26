@@ -26,6 +26,11 @@
 ---
 
 ## 未发布
+### 2026-10-27 · fix：修复 Ctrl+Shift+F 无法呼出侧边栏（0.4.1）
+- 改了什么：`background.js` 的 `chrome.commands` 处理器改为只调用 `chrome.sidePanel.open({ windowId: tab.windowId })`；移除同时传 `tabId` 与 `open({})` 回退。新增 L2 结构检查，禁止再次同时传 `windowId`/`tabId`。版本 0.4.1 五处同步；AGENTS 维护章节更新（仓库/令牌/代理/截图/CI）。
+- 为什么：Chrome 文档要求 `sidePanel.open()` 在 `windowId` 与 `tabId` 中二选一；同时传会被参数校验拒绝，原 `catch` 只打 `console.warn`，表现为按键无反应。
+- 验证：Playwright 真实扩展 `chrome.commands.getAll()` 返回 `open-panel = Ctrl+Shift+F`；`dev/run.mjs` 111/111（新增 sidePanel 参数检查）。需在 `chrome://extensions` 重载后手动按一次确认面板打开。
+- 提交：未发布
 ### 2026-10-27 · docs：手册更新到 0.4.0，统一 900×900 截图
 - 改了什么：`docs/USER_MANUAL.md` 升到 v0.4.0；新增 6.5 身份与矩阵、6.6 序列、6.7 差异与基线、9.3 备份/报告、10.5 AI 资产工具、14.5–14.7 工作流；Cookie/脚本标注为降级入口；修正 10.3 重复编号；全部手册截图按当前 5 项导航重拍为 900×900，并新增 21–25 五张功能图。
 - 为什么：0.4.0 的结构性能力（身份/矩阵/序列/基线/备份/AI）此前手册几乎没有覆盖，旧 420×900 截图也与 README 的正方形窗口不一致。

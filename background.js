@@ -56,8 +56,9 @@ chrome.commands.onCommand.addListener(async (command) => {
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       const tab = tabs && tabs[0];
-      if (tab) await chrome.sidePanel.open({ windowId: tab.windowId, tabId: tab.id });
-      else await chrome.sidePanel.open({});
+      if (!tab || !tab.windowId) throw new Error("未找到活动窗口");
+      // sidePanel.open 的 windowId / tabId 二选一；同时传会被参数校验拒绝（旧实现静默失败）
+      await chrome.sidePanel.open({ windowId: tab.windowId });
     } catch (e) { console.warn("[F12x] 呼出面板失败:", e.message); }
   }
 });
@@ -94,6 +95,6 @@ async function init() {
   } catch (e) {
     console.warn("[F12x] AI 引擎恢复批准失败（隔离，不影响工具台）:", e.message);
   }
-  console.log("[F12x] Service Worker 启动完成 v0.4.0");
+  console.log("[F12x] Service Worker 启动完成 v0.4.1");
 }
 init();
