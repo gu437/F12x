@@ -27,6 +27,11 @@
 
 ## 未发布
 
+### 2026-10-26 · feat：Issue 归入项目持久化（方案 001 / P4）
+- 改了什么：新增 `active_project_v1` 与 `ensureActiveProject()`（没有项目时自动建「默认项目」）；Issue 读写改走当前项目的 `project.issues`（`project:active` / `issue:list` / `issue:save` / `issue:delete`），面板不再直接读写 `f12x_issues_v1`；旧全局库一次性迁入「迁移项目（旧数据）」并留 `issues_backup_v1` 备份。
+- 为什么：Issue 是用户手工产出的结论，属于持久数据；按"持久数据全部落项目"的决策，不应再有独立的全局 Issue 库。
+- 验证：`dev/run.mjs` 60/60；真实 UI 走通「保存到演示项目 → 刷新仍在 → 导出 f12x-issues.md → 删除后清空」，0 `pageerror`。
+- 提交：`a03cc35`
 ### 2026-10-26 · refactor：下线站点工作区并迁入项目（方案 001 / P3）
 - 改了什么：`memory.js` 删除全部站点 CRUD，新增 `migrateSitesToProjectsIfNeeded()`（每个站点 → 同名项目，重名加后缀；facts/templates 并入，留 `sites_backup_v1` 备份）；`router.js` 删 9 个 `site:*` 分支、新增 `project:fact_add`、`get_state` 去 `activeSiteId`；面板删站点视图/顶栏选择器/导航项/全部站点函数（约 110 处引用），「标记为发现」改「存到项目黑板」，Repeater「存到站点」改「存到黑板」；`index.html` / `styles.css` 删对应结构与样式（保留 AI 复用的 `.site-pane`）；README 去站点行与 `sites_v1`，手册删第 9 章并重编号。
 - 为什么：站点工作区与「项目」概念重复、还要手工维护；用户决定持久化数据统一落到项目，站点整体下线。
