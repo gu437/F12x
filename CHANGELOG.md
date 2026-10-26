@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · fix：网络页历史回填状态/详情与过滤逻辑
+- 根因：面板通常晚于页面加载才附加调试器，列表里大多是 `performance` 回填的 `hist_*` 条目——`status=null`、`method=null`、无响应头/体；同时 `networkSnapshot()` 只映射 8 个字段，把 `size/history/intercepted` 丢掉；`Network.loadingFinished` 未处理，实时请求的 size 永远为空。
+- 改了什么：回填读取 `responseStatus` / `transferSize`；`loadingFinished` 回填 `encodedDataLength`；snapshot 保留 `size/history/intercepted`；历史条目加「历史」标签与顶部横幅，详情直接给出“无响应体”说明；附带修复非法 URL 正则静默显示全部、表头排序误绑「操作」列、元数据搜索过期结果覆盖。
+- 验证：`dev/run.mjs` 78/78；真实历史回填 72 条 `status={200:1,404:71}`（修复前全 null）；先 attach 后导航 73 条实时请求 `size` 全有、`history=0`、无重复；UI 横幅/标签/详情说明正常、非法正则显示报错占位；p52/p55/p57 均 0 `pageerror`。
+- 提交：`43e7ee6`
+
 ### 2026-10-27 · feat：脚本视图重做 + 跨脚本源码搜索（方案 004）
 - 改了什么：`debugger` 按 `scriptId` 缓存源码、`get_script_content` 支持 `id`，新增 `search_scripts`（并发 6 / 最多 300 脚本 / 每脚本 20 处命中）；`router` 新增 `tool:script_search`。视图改为主从结构：列表显示外链/内联标签、文件名/域/行数；搜索框回车**跨脚本搜源码**并显示命中数与首行；源码区行号 + 命中行标记 + 关键字 `<mark>` + `‹ x/y ›` 跳转，新增复制/下载；≤560px 时列表在上、源码在下；inline 脚本用 `scriptId` 区分。
 - 为什么：原 grep 只过滤脚本 URL，关键字不在 URL 时列表直接清空、根本搜不到源码；inline 脚本共用空 URL 只能命中第一条；并排布局把源码挤成一条缝。
