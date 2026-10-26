@@ -1,4 +1,4 @@
-# F12x（Chrome MV3 · 当前版本 0.4.3）
+# F12x（Chrome MV3 · 当前版本 0.4.4）
 
 浏览器原生、人类主导的 **Web/API 授权与注入验证工作台**；手动功能不依赖 AI，内建可选 AI 工作台。
 Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加载已解压的扩展程序」安装。
@@ -193,8 +193,13 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 
 ## 许可证
 
-本项目为**专有软件**，版权归 朝悦（GitHub [@gu437](https://github.com/gu437)）所有，保留所有权利。详见 [`LICENSE`](LICENSE)。
-第三方组件许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+本项目以 **GNU Affero General Public License v3.0 only（AGPL-3.0-only）** 开源，版权归 朝悦（GitHub [@gu437](https://github.com/gu437)）所有。
+
+- 可以自由使用、修改、分发、提交改进；
+- 衍生作品（包括作为网络服务提供）必须继续以 AGPL-3.0-only 开源；
+- 闭源商用需另行取得版权人授权。
+
+详见 [`LICENSE`](LICENSE) 与 [`NOTICE`](NOTICE)。贡献指南见 [`CONTRIBUTING.md`](CONTRIBUTING.md)；第三方组件许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
 ## 安全
 
