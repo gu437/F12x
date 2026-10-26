@@ -152,6 +152,14 @@ async function mutateProject(projectId, fn) {
   });
 }
 
+export async function removeProjectFact(projectId, key) {
+  return mutateProject(projectId, (p) => {
+    const before = (p.facts || []).length;
+    p.facts = (p.facts || []).filter((f) => f.key !== key);
+    return { removed: before - p.facts.length };
+  });
+}
+
 export async function addProjectIssue(projectId, issue = {}) {
   return mutateProject(projectId, (p) => {
     p.issues = Array.isArray(p.issues) ? p.issues : [];

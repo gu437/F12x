@@ -26,7 +26,8 @@ import {
   createConversation, deleteConversation,
   listProjects, createProject, renameProject, deleteProject,
   listAIFindings, removeAIFinding, upsertFact, AI_PROJECT_ID,
-  ensureActiveProject, addProjectIssue, updateProjectIssue, removeProjectIssue
+  ensureActiveProject, addProjectIssue, updateProjectIssue, removeProjectIssue, removeProjectFact,
+  addProjectTemplate, removeProjectTemplate, setActiveProjectId, getProject
 } from "./memory.js";
 
 const VERSION = "0.2.2";
@@ -407,6 +408,61 @@ export function handleMessage(message, sender, sendResponse) {
   }
 
   // === 站点工作区 ===
+  if (type === "project:get") {
+    // 项目详情：项目全文 + 归属会话（P6 项目视图）
+    (async () => {
+      try {
+        const p = await getProject(message.projectId);
+        if (!p) return sendResponse({ ok: false, error: "项目不存在" });
+        const convs = (await listConversations()).filter((c) => c.projectId === p.id);
+        sendResponse({ ok: true, project: p, conversations: convs });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "project:set_active") {
+    (async () => {
+      try {
+        if (!message.projectId) return sendResponse({ ok: false, error: "缺少 projectId" });
+        await setActiveProjectId(message.projectId);
+        sendResponse({ ok: true });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "project:fact_remove") {
+    (async () => {
+      try {
+        const pid = message.projectId || (await ensureActiveProject()).id;
+        const res = await removeProjectFact(pid, message.key);
+        if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "project:template_add") {
+    (async () => {
+      try {
+        const pid = message.projectId || (await ensureActiveProject()).id;
+        const res = await addProjectTemplate(pid, message.template || {});
+        if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true, template: res.template });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "project:template_remove") {
+    (async () => {
+      try {
+        const pid = message.projectId || (await ensureActiveProject()).id;
+        const res = await removeProjectTemplate(pid, message.templateId);
+        if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
   if (type === "project:active") {
     // 当前项目 + 项目列表（Issue / 手动黑板等持久数据的归属）
     (async () => {
@@ -429,11 +485,11 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "issue:save") {
     (async () => {
       try {
-        const p = await ensureActiveProject();
+        const pid = message.projectId || (await ensureActiveProject()).id;
         const fields = message.fields || {};
         const res = message.id
-          ? await updateProjectIssue(p.id, message.id, fields)
-          : await addProjectIssue(p.id, fields);
+          ? await updateProjectIssue(pid, message.id, fields)
+          : await addProjectIssue(pid, fields);
         if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
         sendResponse({ ok: true, id: res.issue && res.issue.id });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
@@ -443,8 +499,8 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "issue:delete") {
     (async () => {
       try {
-        const p = await ensureActiveProject();
-        const res = await removeProjectIssue(p.id, message.id);
+        const pid = message.projectId || (await ensureActiveProject()).id;
+        const res = await removeProjectIssue(pid, message.id);
         if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
         sendResponse({ ok: true });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }

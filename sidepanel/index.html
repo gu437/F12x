@@ -15,6 +15,7 @@
     <!-- ========== 头部 ========== -->
     <header id="header">
       <h1 class="logo">F12x</h1>
+      <select id="project-selector" class="project-selector" title="当前项目（黑板 / Issue / 模板 / 会话的持久归属）"></select>
       <span class="spacer"></span>
       <span id="llm-badge" class="llm-badge hidden" title="AI 已配置">AI</span>
       <span id="status" class="status-dot" data-tip="调试器连接状态" title="调试器连接状态"></span>
@@ -33,6 +34,7 @@
         <button class="nav-item" data-view="request" title="请求"><span data-icon="arrow-right" data-size="18"></span><span class="nav-label">请求</span></button>
         <button class="nav-item" data-view="cookie" title="Cookie"><span data-icon="cookie" data-size="18"></span><span class="nav-label">Cookie</span></button>
         <button class="nav-item" data-view="script" title="脚本"><span data-icon="code" data-size="18"></span><span class="nav-label">脚本</span></button>
+        <button class="nav-item" data-view="project" title="项目"><span data-icon="folder-plus" data-size="18"></span><span class="nav-label">项目</span></button>
         <button class="nav-item" data-view="ai" title="AI 会话"><span data-icon="sparkles" data-size="18"></span><span class="nav-label">AI</span></button>
       </nav>
 
@@ -259,7 +261,38 @@
         </section>
 
         <!-- ===== 站点模块 ===== -->
-        <section id="view-ai" class="view">
+        <section id="view-project" class="view">
+      <div class="toolbar wrap">
+        <input id="project-name-input" class="text-input flex" placeholder="新建项目名称…（如：客户 A 评估）" />
+        <button id="project-create-btn" class="ctrl-btn primary"><span data-icon="plus" data-size="12"></span> 创建</button>
+      </div>
+      <div id="project-list" class="project-list"></div>
+      <div id="project-detail" class="project-detail hidden">
+        <div class="project-head">
+          <div>
+            <div id="project-title" class="project-title"></div>
+            <div id="project-counts" class="project-counts"></div>
+          </div>
+          <div class="proj-actions">
+            <button id="proj-set-active" class="mini-btn">设为当前</button>
+            <button id="proj-rename" class="mini-btn">重命名</button>
+            <button id="proj-delete" class="mini-btn danger">删除</button>
+          </div>
+        </div>
+        <div class="tabs">
+          <button class="tab active" data-ptab="facts">黑板</button>
+          <button class="tab" data-ptab="issues">Issue</button>
+          <button class="tab" data-ptab="templates">模板</button>
+          <button class="tab" data-ptab="convs">会话</button>
+        </div>
+        <div id="proj-facts" class="proj-pane active"></div>
+        <div id="proj-issues" class="proj-pane"></div>
+        <div id="proj-templates" class="proj-pane"></div>
+        <div id="proj-convs" class="proj-pane"></div>
+      </div>
+    </section>
+
+    <section id="view-ai" class="view">
           <!-- 列表态工具条 -->
           <div id="ai-list-bar" class="toolbar wrap">
             <button id="ai-new-conv" class="ctrl-btn" title="新建会话（可选绑定项目）"><span data-icon="plus" data-size="12"></span> 新会话</button>

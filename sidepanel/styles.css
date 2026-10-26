@@ -1643,3 +1643,27 @@ body {
 
 /* 长会话窗口化：加载更早消息的按钮 */
 .chat-load-earlier { display: block; margin: 8px auto 2px; }
+
+/* ============ 项目视图（方案 001 / P6） ============ */
+.project-selector { max-width: 140px; font-size: 11px; padding: 2px 4px; border: 1px solid var(--surface-4); border-radius: 6px; background: var(--surface-1, #fff); }
+.project-list { padding: 4px 8px; display: flex; flex-direction: column; gap: 4px; }
+.project-item { border: 1px solid var(--surface-4, #ddd); border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+.project-item:hover { border-color: var(--text-2, #666); }
+.project-item.active { border-color: #000; box-shadow: inset 2px 0 0 #000; }
+.pj-name { font-weight: 600; font-size: 12px; }
+.pj-meta { color: var(--text-4, #888); font-size: 10px; margin-top: 2px; }
+.pj-cur { font-size: 9px; font-weight: 400; color: #fff; background: var(--brand, #4176e6); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+.project-detail { border-top: 1px solid var(--surface-4); flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.project-head { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; }
+.project-title { font-weight: 600; font-size: 13px; }
+.project-counts { color: var(--text-4, #888); font-size: 10px; margin-top: 2px; }
+.proj-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.proj-pane { display: none; flex: 1; overflow-y: auto; padding: 8px; }
+.proj-pane.active { display: block; }
+.fact-item { border: 1px solid var(--surface-4, #ddd); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+.fact-key { font-weight: 600; font-size: 11px; word-break: break-all; }
+.fact-tag { font-size: 9px; color: #fff; background: var(--brand, #4176e6); border-radius: 4px; padding: 0 4px; margin-left: 4px; font-weight: 400; }
+.fact-src { font-size: 9px; color: var(--text-4, #888); margin-left: 4px; }
+.fact-sum { font-size: 11px; color: var(--text-2, #444); margin: 3px 0; white-space: pre-wrap; }
+.tpl-new { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.tpl-new select, .tpl-new textarea, .tpl-new input { width: 100%; }
