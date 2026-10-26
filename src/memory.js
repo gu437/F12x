@@ -698,9 +698,9 @@ export async function appendWorkspaceEntry(convId, entry) {
     to: entry.to || null, replies: entry.replies || []
   });
   // P2 修复：上限 500→2000（300 轮任务 + 专家沉淀 + 审查决策轻松触顶，
-  // 早期研讨记录在任务结束前被静默丢弃）；淘汰时优先保留 decision（审查轨迹——审计性）
+  // 早期研讨记录在任务结束前被静默丢弃）；淘汰时优先保留 decision（审查记录——审计性）
   // 第二轮审查 P2-11：原 decisions.slice(-300) 在 decision 超 300 时丢最早 decision——
-  // 与"优先保留"相悖；decision 保留上限提至 500（审查轨迹是审计刚需）
+  // 与"优先保留"相悖；decision 保留上限提至 500（审查记录是审计刚需）
   if (ws.entries.length > 2000) {
     const decisions = ws.entries.filter(e => e.type === "decision");
     const rest = ws.entries.filter(e => e.type !== "decision");

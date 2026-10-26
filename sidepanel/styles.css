@@ -572,11 +572,6 @@ body.resizing-h { cursor: ew-resize !important; user-select: none; }
 .au-ap.ok { background: #000; color: #fff; }
 .au-ap.no { background: #c62828; color: #fff; }
 .au-ap.auto { background: var(--acc-bg); color: var(--text-2); }
-/* P3：轨迹 tab（events 域可视化） */
-.tr-icon { display: inline-block; width: 14px; text-align: center; color: var(--text-3); margin-right: 2px; }
-.tr-count { font-family: var(--mono); font-size: 10px; color: var(--acc); margin-left: 4px; }
-.tr-cp { background: var(--surface-3); border-radius: 4px; padding: 5px 6px; margin-bottom: 6px; }
-
 /* ---------- 弹层 ---------- */
 .overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.35);
@@ -1453,103 +1448,6 @@ body.resizing-h { cursor: ew-resize !important; user-select: none; }
 .nothink-switch input:checked ~ .nothink-label { color: var(--dsw-static-deepseek-500, #4176e6); font-weight: 600; }
 
 
-/* ============ 轨迹：archify Agent Run Lifecycle 风格（生命周期轨道面板） ============ */
-#ai-d-trajectory .archi {
-  --abg: #0b1220;
-  --apanel: #101a2e;
-  --aborder: #24324d;
-  --amut: #8aa0bd;
-  --adim: #5b6f8c;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "JetBrains Mono", monospace;
-  background: var(--abg);
-  border: 1px solid var(--aborder);
-  border-radius: 10px;
-  padding: 8px 10px 10px;
-  color: #e2e8f0;
-  font-family: var(--mono);
-  font-size: 12px;
-}
-#ai-d-trajectory .archi-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
-#ai-d-trajectory .archi-title { font-weight: 700; font-size: 13px; letter-spacing: .02em; }
-#ai-d-trajectory .archi-sub { color: var(--amut); font-size: 11px; }
-#ai-d-trajectory .archi-focus { margin-left: auto; display: flex; gap: 4px; }
-#ai-d-trajectory .archi-focus-btn {
-  background: var(--apanel); color: var(--amut); border: 1px solid var(--aborder);
-  border-radius: 20px; padding: 2px 10px; font-size: 11px; font-family: var(--mono); cursor: pointer;
-}
-#ai-d-trajectory .archi-focus-btn.active { color: #0b1220; background: #67e8f9; border-color: #67e8f9; font-weight: 600; }
-#ai-d-trajectory .archi .au-item { background: rgba(16, 26, 46, .6); border: 1px solid #1c2a45; border-radius: 6px; padding: 3px 8px; margin: 4px 0; color: #cbd5e1; }
-#ai-d-trajectory .ar-lanes { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-#ai-d-trajectory .ar-lane { display: flex; align-items: flex-start; gap: 8px; }
-#ai-d-trajectory .ar-lane-label {
-  flex: none; width: 96px; padding-top: 6px; font-size: 10.5px; color: var(--amut);
-  text-align: right; text-transform: uppercase; letter-spacing: .04em; line-height: 1.3;
-}
-#ai-d-trajectory .ar-track { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; align-items: center; }
-#ai-d-trajectory .ar-main-track { align-items: stretch; }
-#ai-d-trajectory .ar-stepno { color: var(--adim); font-size: 10px; align-self: center; }
-#ai-d-trajectory .ar-chip {
-  background: var(--apanel); border: 1px solid var(--aborder); border-radius: 8px;
-  padding: 5px 10px; min-width: 74px; cursor: pointer; user-select: none;
-  transition: transform .06s ease, border-color .12s ease;
-}
-#ai-d-trajectory .ar-chip:hover { transform: translateY(-1px); border-color: #67e8f9; }
-#ai-d-trajectory .ar-chip-label { font-weight: 600; font-size: 12px; display: flex; align-items: center; gap: 6px; }
-#ai-d-trajectory .ar-chip-sub { color: var(--amut); font-size: 10px; margin-top: 1px; }
-#ai-d-trajectory .ar-count {
-  background: rgba(103, 232, 249, .14); color: #67e8f9; border-radius: 20px;
-  padding: 0 6px; font-size: 10px;
-}
-#ai-d-trajectory .ar-chip.ar-empty { opacity: .5; }
-#ai-d-trajectory .ar-arrow { color: var(--adim); font-size: 14px; }
-#ai-d-trajectory .t-start { border-color: #22d3ee; }
-#ai-d-trajectory .ar-main .t-start .ar-chip-label { color: #a5f3fc; }
-#ai-d-trajectory .t-plan { border-color: #60a5fa; }
-#ai-d-trajectory .ar-main .t-plan .ar-chip-label { color: #93c5fd; }
-#ai-d-trajectory .t-exec { border-color: #34d399; }
-#ai-d-trajectory .ar-main .t-exec .ar-chip-label { color: #6ee7b7; }
-#ai-d-trajectory .t-review { border-color: #fbbf24; }
-#ai-d-trajectory .ar-main .t-review .ar-chip-label { color: #fcd34d; }
-#ai-d-trajectory .t-done { border-color: #4ade80; }
-#ai-d-trajectory .ar-main .t-done .ar-chip-label { color: #86efac; }
-#ai-d-trajectory .ar-wait .ar-chip, #ai-d-trajectory .ar-wait-lane .ar-chip { border-color: #f59e0b; }
-#ai-d-trajectory .ar-wait .ar-chip-label { color: #fcd34d; }
-#ai-d-trajectory .ar-recovery .ar-chip, #ai-d-trajectory .ar-recovery-lane .ar-chip { border-color: #a78bfa; }
-#ai-d-trajectory .ar-recovery .ar-chip-label { color: #c4b5fd; }
-#ai-d-trajectory .ar-exit .ar-chip, #ai-d-trajectory .ar-exit-lane .ar-chip { border-color: #fb7185; }
-#ai-d-trajectory .ar-exit .ar-chip-label { color: #fda4af; }
-#ai-d-trajectory .ar-chip.t-fail .ar-chip-label { color: #fda4af; }
-#ai-d-trajectory .archi-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; color: var(--amut); font-size: 10.5px; border-top: 1px dashed #1c2a45; padding-top: 6px; }
-#ai-d-trajectory .lg::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
-#ai-d-trajectory .lg.t-start::before { background: #22d3ee; }
-#ai-d-trajectory .lg.t-plan::before { background: #60a5fa; }
-#ai-d-trajectory .lg.t-exec::before { background: #34d399; }
-#ai-d-trajectory .lg.t-review::before { background: #fbbf24; }
-#ai-d-trajectory .lg.t-done::before { background: #4ade80; }
-#ai-d-trajectory .lg.t-wait::before { background: #f59e0b; }
-#ai-d-trajectory .lg.t-recovery::before { background: #a78bfa; }
-#ai-d-trajectory .lg.t-fail::before { background: #fb7185; }
-#ai-d-trajectory .archi-details { margin-top: 8px; border-top: 1px dashed #1c2a45; padding-top: 6px; }
-#ai-d-trajectory .archi-det-head { color: #67e8f9; font-size: 11px; font-weight: 600; margin-bottom: 4px; }
-
-/* tone 直接挂在 chip 上的颜色（补充——chip 自身带 ar-chip+tone 类） */
-#ai-d-trajectory .ar-chip.t-start { border-color: #22d3ee; }
-#ai-d-trajectory .ar-chip.t-start .ar-chip-label { color: #a5f3fc; }
-#ai-d-trajectory .ar-chip.t-plan { border-color: #60a5fa; }
-#ai-d-trajectory .ar-chip.t-plan .ar-chip-label { color: #93c5fd; }
-#ai-d-trajectory .ar-chip.t-exec { border-color: #34d399; }
-#ai-d-trajectory .ar-chip.t-exec .ar-chip-label { color: #6ee7b7; }
-#ai-d-trajectory .ar-chip.t-review { border-color: #fbbf24; }
-#ai-d-trajectory .ar-chip.t-review .ar-chip-label { color: #fcd34d; }
-#ai-d-trajectory .ar-chip.t-done { border-color: #4ade80; }
-#ai-d-trajectory .ar-chip.t-done .ar-chip-label { color: #86efac; }
-#ai-d-trajectory .ar-chip.t-wait { border-color: #f59e0b; }
-#ai-d-trajectory .ar-chip.t-wait .ar-chip-label { color: #fcd34d; }
-#ai-d-trajectory .ar-chip.t-recovery { border-color: #a78bfa; }
-#ai-d-trajectory .ar-chip.t-recovery .ar-chip-label { color: #c4b5fd; }
-#ai-d-trajectory .ar-chip.t-fail { border-color: #fb7185; }
-#ai-d-trajectory .ar-chip.t-fail .ar-chip-label { color: #fda4af; }
-
 /* ============ Prompt 导航（聊天区右侧悬浮，不占布局列；样式与当前 UI 一致） ============ */
 #ai-chat { position: relative; }
 .pn-nav {
@@ -1603,18 +1501,6 @@ body.resizing-h { cursor: ew-resize !important; user-select: none; }
   .pn-nav { width: 132px; }
   #ai-chat.pn-open #ai-chat-msgs { padding-right: 148px; }
 }
-
-/* ============ 轨迹：archify 官方引擎工件嵌入（静态 SVG + 样式；查看器走“打开完整工件”） ============ */
-.archi-wrap { display: flex; flex-direction: column; gap: 6px; }
-.archi-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--text-3, #555); }
-.archi-frame { width: 100%; height: 62vh; min-height: 320px; border: 1px solid var(--surface-4, rgba(0,0,0,0.12)); border-radius: 8px; background: #020617; }
-
-/* 轨迹：sequence 缩放/拖拽舞台 */
-.tr-toolbar { display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:11px; color: var(--text-3,#555); flex-wrap:wrap; }
-.tr-hint { color: var(--text-4,#999); font-size:10px; }
-.tr-stage { position:relative; width:100%; height:62vh; min-height:340px; overflow:hidden; background:#020617; border:1px solid var(--surface-4,rgba(0,0,0,.12)); border-radius:8px; }
-.tr-stage iframe { width:100%; height:100%; border:0; display:block; background:#020617; }
-
 
 /* Issue 工作台 */
 #issue-count { background:var(--brand,#4176e6); color:#fff; border-radius:20px; padding:0 6px; font-size:10px; min-width:16px; text-align:center; }

@@ -255,7 +255,7 @@ export function addAudit(entry) {
   pushStatus({ type: "audit", entry: session.audit[session.audit.length - 1] });
 }
 
-// P1：会话增量审计域（方案 §8.2，为轨迹可视化铺路）
+// P1：会话增量审计域（方案 §8.2，为审计记录铺路）
 // 只追加 session.events[]，不动 messages/audit 结构；上限 500 + 裁剪策略：
 // 超出时先把连续 state 事件合并为"最新一条 + count"，再截尾 500（approval/compaction 保留）
 export function sessionEvent(session, evt) {
@@ -276,7 +276,7 @@ export function sessionEvent(session, evt) {
 }
 
 // ============================================================
-// 实时同步：执行中增量落库 + 广播 conversation:changed（会话记录/轨迹边跑边刷新，
+// 实时同步：执行中增量落库 + 广播 conversation:changed（会话记录边跑边刷新，
 // 不再等 finalizeTask 一次性收口）。_seq 是"运行上下文消息水位"：
 // flushRunProgress 按高水位把本轮新增消息抄进 session.messages（拷贝解耦——
 // 压缩替换 ctx.messages 时不影响已落库记录）。
@@ -703,7 +703,7 @@ function ensureToolResponses(messages, toolCalls) {
   }
 }
 
-// 计划快照记录（问题3）：计划内容变化（制定/重估）时写入轨迹事件 + 会话记录 marker。
+// 计划快照记录（问题3）：计划内容变化（制定/重估）时写入事件记录 + 会话记录 marker。
 // marker 用 _sys/_kind:"plan" 标注——UI 回看渲染为可展开计划块；加载历史时排除，不进 LLM 上下文。
 function recordPlanSnapshot(ctx, kind) {
   const { session } = ctx;
@@ -771,7 +771,7 @@ async function handleToolCalls(ctx, out, round) {
     }
     for (const [toolName, group] of groups) {
       const decision = await requestApproval(toolName, group.level, group.calls.map(c => ({ ti: c.ti, preview: c.preview })));
-      // P1：会话增量审计域——批准合并为一条事件（保留 decision，轨迹可视化用）
+      // P1：会话增量审计域——批准合并为一条事件（保留 decision，审计回看用）
       sessionEvent(session, { type: "approval", tool: toolName, level: group.level, calls: group.calls.length, decision: decision.decision });
       if (decision.decision === "timeout" && taskState.paused) { ctx.aborted = true; break; }
       for (const c of group.calls) {
@@ -945,7 +945,7 @@ async function applyPlanWrite(ctx, toolCallId, args, round) {
   session.planCommitted = true;
   const kind = hadPlan ? "revise" : "init";
   if (changed) {
-    recordPlanSnapshot(ctx, kind); // 内容可见：轨迹 marker + events
+    recordPlanSnapshot(ctx, kind); // 内容可见：记录 marker + events
     sessionEvent(session, { type: "plan", kind, steps: steps.length, descs: steps.map(q => q.desc).join(" | ").substring(0, 200) });
     try { flushSession(session); } catch (e) {} // 流程变化实时入库广播
   }
@@ -1034,7 +1034,7 @@ function maybeTriggerAdversarial(ctx, round) {
   ctx.reviewMiss = 0;
   ctx.pendingReview = { round, reason, question: q }; // 回应到达时整对落库可见审查卡
 
-  // P5 可观测：触发统计 + 轨迹事件
+  // P5 可观测：触发统计 + 审计事件
   session.reviewStats = session.reviewStats || { triggers: 0, byReason: {}, replied: 0 };
   session.reviewStats.triggers++;
   session.reviewStats.byReason[reason] = (session.reviewStats.byReason[reason] || 0) + 1;
@@ -1404,7 +1404,7 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
       flushRunProgress(ctx); // checkpoint 落库
       try { if (onStatus) onStatus({ type: "ai:compaction_done", ...info }); } catch (e) {}
     }
-    flushSession(session); // 广播 conversation:changed → 面板实时刷新记录/轨迹
+    flushSession(session); // 广播 conversation:changed → 面板实时刷新记录
   };
 
   for (let round = 0; round < maxRounds; round++) {

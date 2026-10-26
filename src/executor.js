@@ -173,7 +173,7 @@ export async function dispatchTool(name, args, { mode = "ai", signal = null, exp
   try {
     // P2c：spill（方案 §9.1）——超阈值结果写溢出区，消息留摘要 + 读取指引（read_spilled）
     const result = maybeSpill(normalizeToolResult(await Promise.race([work, timeoutPromise])), name);
-    // P3：轨迹事件（events 域）——工具分发统一留痕（AI/手动双路径全覆盖；taskState.conv 无会话时静默跳过）
+    // P3：审计事件（events 域）——工具分发统一留痕（AI/手动双路径全覆盖；taskState.conv 无会话时静默跳过）
     sessionEvent(taskState.conv, { type: "tool", name, ok: !(result?.error || result?.ok === false) });
     return result;
   } catch (e) {
