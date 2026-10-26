@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-26 · feat：让 AI 知道自己能做什么（方案 002）
+- 改了什么：`prompts.js` 删除 IDENTITY 手写工具目录与审计员段，新增 `BOUNDARY_SECTION` / `buildCapabilityManifest()` / `buildEnvSection()`，`assembleSections` 支持 `capability` / `env` 动态段；`agent.js` 任务模式按「工具注册表 + 档位 + 批准级别」生成能力清单（lite 档标注不可用工具）与当前环境（项目名、事实/Issue/模板计数、模式、档位、批准级别），对话模式生成能力说明传给 `runChat`；`llm.js` 不再硬编码工具清单。
+- 为什么：模型只拿到工具 schema，不知道自己的批准规则、所属项目、档位与边界；IDENTITY 里的手写清单已与 lite 档漂移（列了 `call_expert` 却不可用）。
+- 验证：`dev/run.mjs` 74/74（新增 5 条 L1：lite 隐藏工具、批准分组、环境段、段落顺序、边界不含 Cookie；1 条 L2）；真实模型回复未测（无可用的已配置端点），验证的是注入内容本身。
+- 提交：`dde9a22`
+
 ### 2026-10-26 · style：项目卡片统一高度
 - 改了什么：项目卡片改为 `min-height: 70px` + flex 纵向居中；名称与描述都做单行省略号（`text-overflow: ellipsis`），长描述不再换行撑高卡片。
 - 为什么：有描述 / 描述换行的卡片会比无描述卡片高，列表看起来参差不齐。
