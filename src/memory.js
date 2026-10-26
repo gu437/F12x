@@ -913,3 +913,19 @@ export async function migrateIssuesToProjectsIfNeeded() {
   await chrome.storage.local.remove("f12x_issues_v1");
   return { migrated: arr.length, projectId: pid };
 }
+
+// === P7 收口：清理已废弃的旧键（迁移备份 sites_backup_v1 / issues_backup_v1 保留一版） ===
+export async function cleanupLegacyKeys() {
+  const drop = new Set();
+  const r = await chrome.storage.local.get(["f12x_scope_v1", "shots_index_v1"]);
+  if (r.f12x_scope_v1 !== undefined) drop.add("f12x_scope_v1");
+  const legacyShots = Array.isArray(r.shots_index_v1) ? r.shots_index_v1 : [];
+  for (const k of legacyShots) if (typeof k === "string" && k.startsWith("shot_")) drop.add(k);
+  if (r.shots_index_v1 !== undefined) drop.add("shots_index_v1");
+  const legacyKeys = ["conversations_v2", "projects_v2", "sites_v1", "active_site_v1", "f12x_issues_v1"];
+  const r2 = await chrome.storage.local.get(legacyKeys);
+  for (const k of legacyKeys) if (r2[k] !== undefined) drop.add(k);
+  const list = [...drop];
+  if (list.length) await chrome.storage.local.remove(list);
+  return { removed: list.length, keys: list };
+}

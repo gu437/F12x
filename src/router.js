@@ -30,7 +30,7 @@ import {
   addProjectTemplate, removeProjectTemplate, setActiveProjectId, getProject
 } from "./memory.js";
 
-const VERSION = "0.2.2";
+const VERSION = "0.3.0";
 // 手动 Intruder 的中断控制器（面板「停止」→ tool:intruder_stop 中止当前爆破）
 let manualIntruderCtl = null;
 

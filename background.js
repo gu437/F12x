@@ -15,7 +15,7 @@ import { handleMessage } from "./src/router.js";
 import { loadEndpoints } from "./src/llm.js";
 import { cleanupStaleDebugger, recoverInterceptSnapshot, networkSnapshot, consoleSnapshot, backfillFromPerformance } from "./src/debugger.js";
 import { recoverPendingApproval } from "./src/agent.js";
-import { migrateConversationsIfNeeded, migrateProjectsIfNeeded, migrateSitesToProjectsIfNeeded, migrateIssuesToProjectsIfNeeded } from "./src/memory.js";
+import { migrateConversationsIfNeeded, migrateProjectsIfNeeded, migrateSitesToProjectsIfNeeded, migrateIssuesToProjectsIfNeeded, cleanupLegacyKeys } from "./src/memory.js";
 
 // --- sidepanel 入口 ---
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
@@ -85,6 +85,7 @@ async function init() {
   try { await migrateProjectsIfNeeded(); } catch (e) { console.warn("[F12x] 项目迁移失败:", e.message); }
   try { await migrateSitesToProjectsIfNeeded(); } catch (e) { console.warn("[F12x] 站点迁移失败:", e.message); }
   try { await migrateIssuesToProjectsIfNeeded(); } catch (e) { console.warn("[F12x] Issue 迁移失败:", e.message); }
+  try { const c = await cleanupLegacyKeys(); if (c.removed) console.log("[F12x] 已清理旧存储键:", c.keys.join(", ")); } catch (e) { console.warn("[F12x] 旧键清理失败:", e.message); }
   await cleanupStaleDebugger(); // 清理残留调试会话，避免 "Another debugger is already attached"
   await recoverInterceptSnapshot(); // 14.1：SW 复活时拦截队列断线放行兜底
   // 14.1 ②：SW 复活时恢复未决批准 → 重新弹批准条（静态导入；AI 隔离由运行时 LLM 配置检查保证）
@@ -93,6 +94,6 @@ async function init() {
   } catch (e) {
     console.warn("[F12x] AI 引擎恢复批准失败（隔离，不影响工具台）:", e.message);
   }
-  console.log("[F12x] Service Worker 启动完成 v0.2.2");
+  console.log("[F12x] Service Worker 启动完成 v0.3.0");
 }
 init();
