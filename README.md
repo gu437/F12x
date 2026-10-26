@@ -12,9 +12,15 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 
 ## 界面
 
-![F12x 900×900 测试窗口](docs/images/readme-square.png)
+以下均为 **900×900 Playwright 实拍**（演示数据）。
 
-> 900×900 Playwright 测试窗口（网络视图；演示数据）。
+![流量](docs/images/readme-network.png)
+
+| 测试台 | 项目 |
+| --- | --- |
+| ![测试台](docs/images/readme-testbench.png) | ![项目](docs/images/readme-project.png) |
+| **命令面板** | **Issue 工作台** |
+| ![命令面板](docs/images/readme-command.png) | ![Issue](docs/images/readme-issue.png) |
 ## 快速开始
 
 1. 打开 `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」，选择本目录。

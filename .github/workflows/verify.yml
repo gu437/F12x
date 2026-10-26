@@ -26,4 +26,4 @@ jobs:
             node --check "$f"
           done
       - name: README assets
-        run: test -f docs/images/readme-square.png
+        run: test -f docs/images/readme-network.png && test -f docs/images/readme-testbench.png
