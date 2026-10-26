@@ -29,6 +29,7 @@ import {
   ensureActiveProject, addProjectIssue, updateProjectIssue, removeProjectIssue, removeProjectFact,
   addProjectTemplate, removeProjectTemplate, setActiveProjectId, getProject
 } from "./memory.js";
+import { saveEvidence, listEvidence, getEvidence, removeEvidence, markEvidenceIssue } from "./evidence.js";
 
 // 持久数据必须落在项目里：没有项目就明确报错（项目只在项目页创建）
 async function requireActiveProjectId(explicitId) {
@@ -495,6 +496,74 @@ export function handleMessage(message, sender, sendResponse) {
       try {
         const p = await ensureActiveProject();
         sendResponse({ ok: true, project: p ? { id: p.id, name: p.name } : null, issues: p ? (p.issues || []) : [] });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "evidence:list") {
+    (async () => {
+      try {
+        const pid = message.projectId || await requireActiveProjectId();
+        const res = await listEvidence(pid || null);
+        sendResponse({ ok: true, ...res });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "evidence:get") {
+    (async () => {
+      try {
+        const ev = await getEvidence(message.id);
+        if (!ev) return sendResponse({ ok: false, error: "证据不存在", code: "NOT_FOUND" });
+        sendResponse({ ok: true, evidence: ev });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "evidence:save") {
+    (async () => {
+      try {
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目（证据必须归属项目）", code: "NOT_FOUND" });
+        const res = await saveEvidence({ ...message, projectId: pid });
+        if (res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse(res);
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "evidence:remove") {
+    (async () => {
+      try {
+        const ev = await getEvidence(message.id);
+        if (!ev) return sendResponse({ ok: false, error: "证据不存在", code: "NOT_FOUND" });
+        const project = await getProject(ev.projectId);
+        for (const issue of (project?.issues || [])) {
+          if ((issue.evidenceIds || []).includes(message.id)) {
+            await updateProjectIssue(ev.projectId, issue.id, { evidenceIds: issue.evidenceIds.filter((x) => x !== message.id) });
+          }
+        }
+        await removeEvidence(message.id);
+        sendResponse({ ok: true });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "evidence:attach" || type === "evidence:detach") {
+    (async () => {
+      try {
+        const ev = await getEvidence(message.id);
+        if (!ev) return sendResponse({ ok: false, error: "证据不存在", code: "NOT_FOUND" });
+        const project = await getProject(ev.projectId);
+        const issue = (project?.issues || []).find((x) => x.id === message.issueId);
+        if (!issue) return sendResponse({ ok: false, error: "Issue 不存在", code: "NOT_FOUND" });
+        const attach = type === "evidence:attach";
+        const set = new Set(issue.evidenceIds || []);
+        if (attach) set.add(message.id); else set.delete(message.id);
+        const upd = await updateProjectIssue(ev.projectId, issue.id, { evidenceIds: [...set] });
+        if (upd?.error) return sendResponse({ ok: false, error: upd.error, code: upd.code });
+        await markEvidenceIssue(message.id, issue.id, attach);
+        sendResponse({ ok: true });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;

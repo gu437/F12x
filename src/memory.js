@@ -1,4 +1,5 @@
 // F12x memory 模块（模块化拆分，纯搬移零逻辑变更）
+import { deleteProjectEvidence } from "./evidence.js";
 
 export const PROJECTS_KEY = "projects_v2"; // 旧：单键 map，仅用于迁移
 export const PROJECTS_INDEX_KEY = "projects_index_v2";
@@ -132,6 +133,7 @@ export function deleteProject(projectId) {
 
 async function deleteProjectInner(projectId) {
   const index = (await readProjectIndex()).filter((m) => m.id !== projectId);
+  try { await deleteProjectEvidence(projectId); } catch (e) { /* 证据清理失败不阻断项目删除 */ }
   await chrome.storage.local.set({ [PROJECTS_INDEX_KEY]: index });
   await chrome.storage.local.remove(projectKey(projectId));
   // 解绑会话（分键布局：逐个改 projectId，不再依赖旧的全量数组）
@@ -188,6 +190,7 @@ export async function addProjectIssue(projectId, issue = {}) {
       url: String(issue.url || "").substring(0, 2000),
       desc: String(issue.desc || "").substring(0, 20000),
       evidence: String(issue.evidence || "").substring(0, 50000),
+      evidenceIds: Array.isArray(issue.evidenceIds) ? issue.evidenceIds.slice(0, 100) : [],
       createdAt: Date.now(), updatedAt: Date.now(),
     };
     p.issues.push(it);
@@ -202,6 +205,7 @@ export async function updateProjectIssue(projectId, issueId, patch = {}) {
     for (const k of ["title", "sev", "status", "method", "url", "desc", "evidence"]) {
       if (patch[k] !== undefined) it[k] = String(patch[k]).substring(0, k === "evidence" ? 50000 : 20000);
     }
+    if (Array.isArray(patch.evidenceIds)) it.evidenceIds = patch.evidenceIds.slice(0, 100);
     it.updatedAt = Date.now();
     return { issue: it };
   });

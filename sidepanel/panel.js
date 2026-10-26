@@ -848,6 +848,7 @@ function ensureDetailActions(item) {
   if (item) {
     actions.innerHTML = `
       <button class="mini-btn" data-st="copyurl" title="复制完整 URL">复制 URL</button>
+      <button class="mini-btn" data-st="evidence" title="把完整请求/响应存为项目证据">存证据</button>
       <button class="mini-btn" data-st="repeater">→ Repeater</button>
       <button class="mini-btn" data-st="intruder">→ Intruder</button>
       <button class="mini-btn" data-st="decoder">→ Decoder</button>
@@ -856,6 +857,7 @@ function ensureDetailActions(item) {
       <button class="mini-btn" data-st="mark">标记为发现</button>
       <button class="mini-btn" data-st="issue">→ Issue</button>`;
     actions.querySelector('[data-st="copyurl"]').addEventListener("click", () => copyText(item.url, "已复制 URL"));
+    actions.querySelector('[data-st="evidence"]').addEventListener("click", () => saveNetworkEvidence(item));
     actions.querySelector('[data-st="repeater"]').addEventListener("click", () => sendToRepeater(item));
     actions.querySelector('[data-st="intruder"]').addEventListener("click", () => sendToIntruder(item));
     actions.querySelector('[data-st="decoder"]').addEventListener("click", () => sendToDecoder(item));
@@ -1167,6 +1169,7 @@ function initRequestModule() {
 
   // Repeater
   $("rep-send").addEventListener("click", repSend);
+  if ($("rep-evidence")) $("rep-evidence").addEventListener("click", saveRepeaterEvidence);
   // Repeater 历史存到项目黑板
   $("rep-save-site").addEventListener("click", async () => {
     if (!app.rep.history.length) return toast("暂无 Repeater 历史可保存");
@@ -1636,6 +1639,194 @@ function showScriptHit() {
 }
 
 // ============================================================
+// ===== 证据（方案 009 / P1：项目级不可变证据） =====
+// ============================================================
+function evidenceProject() {
+  if (app.projDetail && app.projDetail.project) return app.projDetail.project;
+  return app.currentProject || null;
+}
+
+function parseHeaderLines(text) {
+  const out = {};
+  String(text || "").split("\n").forEach((l) => {
+    const i = l.indexOf(":");
+    if (i > 0) out[l.slice(0, i).trim()] = l.slice(i + 1).trim();
+  });
+  return out;
+}
+
+function headersToText(h) {
+  return Object.entries(h || {}).map(([k, v]) => k + ": " + v).join("\n");
+}
+
+function evidenceCurl(ev) {
+  const r = ev.request || {};
+  let cmd = `curl -X ${r.method || "GET"} ${JSON.stringify(r.url || "")}`;
+  for (const [k, v] of Object.entries(r.headers || {})) cmd += ` \\\n  -H ${JSON.stringify(k + ": " + v)}`;
+  if (r.body) cmd += ` \\\n  --data-raw ${JSON.stringify(r.body)}`;
+  return cmd;
+}
+
+async function evidenceSaveDialog(payload) {
+  const proj = evidenceProject();
+  if (!proj) return toast("请先选择项目（证据必须归属项目）");
+  const defTitle = `${payload.request && payload.request.method ? payload.request.method : "GET"} ${payload.request ? payload.request.url : ""}`.substring(0, 120);
+  openModal(`<h3>存为证据</h3>
+    <label>标题</label><input id="ev-title" class="text-input" value="${esc(defTitle)}" />
+    <label>标签（逗号分隔，可选）</label><input id="ev-tags" class="text-input" placeholder="idor, authz" />
+    <label>备注（可选）</label><textarea id="ev-notes" class="text-input" rows="2"></textarea>
+    <div class="modal-actions"><button id="ev-cancel">取消</button><button id="ev-save" class="primary">保存证据</button></div>`);
+  const box = document.querySelector(".modal-box");
+  if (!box) return;
+  box.querySelector("#ev-cancel").addEventListener("click", closeModal);
+  box.querySelector("#ev-save").addEventListener("click", async () => {
+    const title = (($("ev-title") && $("ev-title").value) || "").trim();
+    const tags = (($("ev-tags") && $("ev-tags").value) || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const notes = (($("ev-notes") && $("ev-notes").value) || "").trim();
+    if (!title) return toast("标题不能为空");
+    const r = await api("evidence:save", { ...payload, projectId: proj.id, title, tags, notes });
+    if (!r.ok) return toast("保存失败：" + (r.error || ""));
+    closeModal();
+    toast("已存为证据" + (r.truncated ? "（响应体已截断）" : ""));
+    if (app.projDetail && app.projDetail.project.id === proj.id) renderProjEvidence(proj);
+  });
+}
+
+async function saveNetworkEvidence(item) {
+  if (!item) return;
+  if (!evidenceProject()) return toast("请先选择项目（证据必须归属项目）");
+  const r = await api("tool:network_detail", { id: item.id, limit: 2 * 1024 * 1024 });
+  if (!r.ok) return toast("读取请求详情失败：" + (r.error || ""));
+  await evidenceSaveDialog({
+    kind: "request",
+    source: "network",
+    request: {
+      method: item.method || r.method,
+      url: item.url || r.url,
+      headers: r.requestHeaders || {},
+      body: r.postData || "",
+      capturedAt: Date.now(),
+    },
+    response: {
+      status: r.status,
+      headers: r.responseHeaders || {},
+      body: r.body || "",
+      mimeType: r.mimeType || "",
+      size: item.size,
+    },
+  });
+}
+
+function evidenceResponseOfRepeater() {
+  const r = app.rep.lastResponse;
+  if (!r || r.ok === false) return null;
+  return {
+    status: r.status,
+    headers: r.responseHeaders || {},
+    body: r.body || "",
+    mimeType: r.mimeType || "",
+  };
+}
+
+async function saveRepeaterEvidence() {
+  const resp = evidenceResponseOfRepeater();
+  if (!resp) return toast("先发送一次请求再存证据");
+  const url = $("rep-url") ? $("rep-url").value.trim() : "";
+  if (!url) return toast("URL 必填");
+  await evidenceSaveDialog({
+    kind: "request",
+    source: "repeater",
+    request: {
+      method: $("rep-method") ? $("rep-method").value : "GET",
+      url,
+      headers: parseHeaderLines($("rep-headers") ? $("rep-headers").value : ""),
+      body: $("rep-body") ? $("rep-body").value : "",
+      capturedAt: Date.now(),
+    },
+    response: resp,
+  });
+}
+
+async function openEvidencePreview(id) {
+  const r = await api("evidence:get", { id });
+  if (!r.ok) return toast("读取证据失败：" + (r.error || ""));
+  const ev = r.evidence;
+  const req = ev.request || {};
+  const resp = ev.response || {};
+  openModal(`<h3>${esc(ev.title || "证据")}</h3>
+    <div class="ev-preview-meta">${esc(req.method || "GET")} ${esc(req.url || "")} · ${resp.status == null ? "-" : esc(String(resp.status))} · ${new Date(ev.createdAt || 0).toLocaleString()}${resp.truncated ? " · 响应体已截断（原始 " + esc(String(resp.originalLength || "")) + " 字符）" : ""}</div>
+    <div class="ev-preview-grid">
+      <div><div class="ev-sec-title">请求头</div><pre class="ev-pre">${esc(headersToText(req.headers) || "（无）")}</pre></div>
+      <div><div class="ev-sec-title">响应头</div><pre class="ev-pre">${esc(headersToText(resp.headers) || "（无）")}</pre></div>
+    </div>
+    <div class="ev-sec-title">请求体</div><pre class="ev-pre">${esc(req.body || "（无）")}</pre>
+    <div class="ev-sec-title">响应体</div><pre class="ev-pre">${esc(resp.body || "（无）")}</pre>
+    <div class="modal-actions"><button id="ev-copy-curl">复制 curl</button><button id="ev-close" class="primary">关闭</button></div>`);
+  const box = document.querySelector(".modal-box");
+  box.querySelector("#ev-close").addEventListener("click", closeModal);
+  box.querySelector("#ev-copy-curl").addEventListener("click", () => copyText(evidenceCurl(ev), "已复制 curl"));
+}
+
+async function evidenceAttachFlow(ev, p) {
+  const issues = p.issues || [];
+  if (!issues.length) return toast("项目里还没有 Issue，先新建一个");
+  openModal(`<h3>关联 Issue</h3><label>选择 Issue</label><select id="ev-issue">${issues.map((it) => `<option value="${esc(it.id)}">${esc(it.title || it.url || it.id)}</option>`).join("")}</select>
+    <div class="modal-actions"><button id="ev-attach-cancel">取消</button><button id="ev-attach-ok" class="primary">关联</button></div>`);
+  const box = document.querySelector(".modal-box");
+  box.querySelector("#ev-attach-cancel").addEventListener("click", closeModal);
+  box.querySelector("#ev-attach-ok").addEventListener("click", async () => {
+    const issueId = $("ev-issue").value;
+    const r = await api("evidence:attach", { id: ev.id, issueId });
+    if (!r.ok) return toast("关联失败：" + (r.error || ""));
+    closeModal();
+    toast("已关联 Issue");
+    renderProjEvidence(p);
+    if (app.projEditIssueId === issueId) { await projRefresh(); }
+  });
+}
+
+async function renderProjEvidence(p) {
+  if (!p) return;
+  const r = await api("evidence:list", { projectId: p.id });
+  if (!app.projDetail || app.projDetail.project.id !== p.id) return;
+  const rows = r.ok ? (r.evidences || []) : [];
+  projPane("proj-evidence-list", rows.length ? rows.map((ev) => `
+    <div class="ev-card" data-ev="${esc(ev.id)}">
+      <div class="ev-card-top"><span class="ev-card-title">${esc(ev.title || "（未命名）")}</span><span class="ev-card-status">${ev.status == null ? "-" : esc(String(ev.status))}</span></div>
+      <div class="ev-card-meta">${esc(ev.method || "GET")} ${esc(ev.url || "")} · ${new Date(ev.createdAt || 0).toLocaleString()}${ev.identityName ? " · 身份 " + esc(ev.identityName) : ""}${(ev.tags || []).length ? " · " + esc((ev.tags || []).join(", ")) : ""}${(ev.issueIds || []).length ? " · 已关联 " + ev.issueIds.length + " 个 Issue" : ""}</div>
+      <div class="ev-card-actions">
+        <button class="mini-btn" data-ev-view="${esc(ev.id)}">查看</button>
+        <button class="mini-btn" data-ev-curl="${esc(ev.id)}">复制 curl</button>
+        <button class="mini-btn" data-ev-attach="${esc(ev.id)}">关联 Issue</button>
+        <button class="mini-btn danger" data-ev-del="${esc(ev.id)}">删除</button>
+      </div>
+    </div>`).join("") : '<div class="placeholder">暂无证据：从网络详情/Repeater 点「存证据」</div>');
+  const count = $("project-counts");
+  if (count) {
+    const base = count.textContent.replace(/ · 证据 \d+/, "");
+    count.textContent = base + " · 证据 " + rows.length;
+  }
+  const box = $("proj-evidence-list");
+  if (!box) return;
+  box.querySelectorAll("[data-ev-view]").forEach((b) => b.addEventListener("click", () => openEvidencePreview(b.dataset.evView)));
+  box.querySelectorAll("[data-ev-curl]").forEach((b) => b.addEventListener("click", async () => {
+    const rr = await api("evidence:get", { id: b.dataset.evCurl });
+    if (rr.ok) copyText(evidenceCurl(rr.evidence), "已复制 curl");
+  }));
+  box.querySelectorAll("[data-ev-attach]").forEach((b) => b.addEventListener("click", async () => {
+    const rr = await api("evidence:get", { id: b.dataset.evAttach });
+    if (rr.ok) evidenceAttachFlow(rr.evidence, p);
+  }));
+  box.querySelectorAll("[data-ev-del]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("删除该证据？不可恢复")) return;
+    const rr = await api("evidence:remove", { id: b.dataset.evDel });
+    if (!rr.ok) return toast("删除失败：" + (rr.error || ""));
+    toast("证据已删除");
+    renderProjEvidence(p);
+  }));
+}
+
+// ============================================================
 // ===== 项目模块（P6+：唯一持久化容器；列表 / 详情 / 跨模块联动） =====
 // ============================================================
 async function loadProjects(focusId) {
@@ -1699,6 +1890,7 @@ async function openProjectDetail(id) {
   renderProjFacts(p);
   renderProjIssues(p);
   renderProjTemplates(p);
+  renderProjEvidence(p);
   renderProjConvs(r.conversations);
   renderProjectList();
 }
@@ -1739,7 +1931,7 @@ function renderProjIssues(p) {
     <div class="issue-item">
       <span class="issue-sev sev-${esc(it.sev)}">${esc(ISSUE_SEV[it.sev] || it.sev)}</span>
       <span class="issue-title">${esc(it.title || "（未命名）")}</span>
-      ${it.url ? '<span class="issue-url">' + esc(it.url) + "</span>" : ""}
+      ${it.url ? '<span class="issue-url">' + esc(it.url) + "</span>" : ""}${(it.evidenceIds || []).length ? '<span class="issue-ev">🔗 ' + it.evidenceIds.length + "</span>" : ""}
       <button class="mini-btn" data-edit-issue="${esc(it.id)}">编辑</button>
       <button class="mini-btn danger" data-del-issue="${esc(it.id)}">删除</button>
     </div>`).join("") : '<div class="placeholder">暂无 Issue：用上方表单新建，或从网络详情「→ Issue」</div>'));

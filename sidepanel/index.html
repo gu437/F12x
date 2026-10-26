@@ -161,6 +161,7 @@
                 <button id="rep-cmp-last" class="mini-btn" title="与上一次响应对比">对比上次</button>
                 <button id="rep-to-compare" class="mini-btn">→ Comparer</button>
                 <button id="rep-to-decoder" class="mini-btn">→ Decoder</button>
+                <button id="rep-evidence" class="mini-btn" title="把本次请求/响应存为项目证据">存证据</button>
               </span>
             </div>
             <pre id="rep-result" class="result-box"></pre>
@@ -293,9 +294,13 @@
         </div>
         <div class="tabs">
           <button class="tab active" data-ptab="facts">黑板</button>
+          <button class="tab" data-ptab="evidence">证据</button>
           <button class="tab" data-ptab="issues">Issue</button>
           <button class="tab" data-ptab="templates">模板</button>
           <button class="tab" data-ptab="convs">会话</button>
+        </div>
+        <div id="proj-evidence" class="proj-pane">
+          <div id="proj-evidence-list"></div>
         </div>
         <div id="proj-facts" class="proj-pane active">
           <div class="fact-new">
