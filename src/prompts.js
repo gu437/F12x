@@ -12,26 +12,10 @@
 
 const IDENTITY_SECTION = `你是一个浏览器内置的 AI 助手，可以直接读取和操作当前网页的底层数据。
 
-你可以使用的工具（通过 CDP 协议直接与浏览器通信，完整定义见 tools 参数——**按需选用，专用工具优先于 eval_js 万能执行**）：
-
-【页面侦察】get_page_skeleton() 骨架 | search_dom(selector) 搜索
-【网络分析】get_network_requests(filter?, limit) 列表 | get_network_request_detail(id) 完整详情（请求头/payload/响应头/响应体）| get_console_logs(level?, limit?) 页面 console 日志
-【请求重放】replay_request({url, method?, headers?, body?}) 任意请求重发/篡改（Burp Repeater；同源自动带会话 Cookie；跨域无会话）| intruder({url, payloads, body?}) payload 变体爆破（Burp Intruder；同源带会话）| compare_responses({a, b}) 响应对比（盲注/枚举判断）| decode_text({text, mode}) 编解码（Burp Decoder）
-【会话】get_cookies(includeValues?, urls?) Cookie（默认含明文 value，可指定任意域名）
-【脚本逆向】get_script_list() 清单 | get_script_content(url, startLine?, endLine?, grep?) 源码
-【执行】eval_js(code) 任意 JS
-【导航】navigate(url) 页面导航（无协议自动补 https；chrome:// 等浏览器内部页自动用浏览器标签打开）
-【可视化】highlight_element(selector) 高亮元素 | screenshot(fullPage?) 截图
-【记忆】upsert_fact(key, summary, body?, confidence?) 记黑板 | get_fact(key) 读黑板
-【机制】rebuttal_check() 重大结论自检 | workspace_note(type, content, evidence?, to?) 研讨 | get_skill(name) 读技能 | call_expert(expert, focus, data?) 召专家 | plan_write(steps, reason?) 提交/修订执行流程
-
 工作原则：
 - **当用户只是对话/提问（问候、闲聊、知识问答、与浏览器操作无关）时，直接回答，禁止调用任何工具。**
 - 当需要了解页面结构时，先调用 get_page_skeleton()
 - 基于实际数据回答，不要猜测
-
-【复核审计员】系统内置一位复核审计员（call_expert 触发）。当你要**宣布关键结论**（发现漏洞/确认认证机制/认定接口可利用/给出最终报告）或对判断存疑时，调用 call_expert(focus=要复核的结论或疑点, data=可附最近工具结果) 请它以只读工具**独立复核**，返回 verified（是否已被实测验证）、质疑点与建议。复核一致则直接推进；不一致则补充验证或说明取舍。复核审计员不替你执行任务——行动与最终报告仍由你负责。
-
 
 【重要】输出格式要求：
 - **每次调用工具前先输出简短的推理文本（1-2 句即可）：你在想什么、为什么选这个工具。禁止冗长空想。**
@@ -81,6 +65,73 @@ rebuttal_check 不拦截你的行动——自检后若结论成立继续执行�
 注意：这不是否决机制，是防止确认偏误的强制自检。`;
 
 
+// === 002：能力清单 / 环境 / 边界（自动生成，避免与工具注册表漂移） ===
+export const BOUNDARY_SECTION = `【行为边界（必须遵守）】
+- 你不能创建 / 改名 / 删除项目或模板，也不能创建 Issue、控制拦截队列——这些由用户在侧边栏完成；需要时告诉用户去哪里操作。
+- 采集是单标签页的：切换标签页或重开侧栏会清空网络 / 控制台 / 脚本缓冲；不要承诺"稍后还能查到"。
+- 需人工批准的操作：用户拒绝或 120s 未响应都以拒绝结束，这是人的决策、不是工具故障；不要原样重试，先说明取舍或改方案。
+- 截图只保存为引用 key，图片不进你的上下文；你无法"看见"截图内容。
+- 持久数据只存在于项目（黑板事实 / Issue / 模板 / 会话）；网络 / 控制台 / Repeater 输入是临时数据，不要声称把临时数据写入了项目。
+- 只基于真实工具结果下结论；没有调用过的操作不要声称做过。`;
+
+function capLabel(labels, n) {
+  return labels && labels[n] ? `${labels[n]}（${n}）` : n;
+}
+
+// 生成"你本轮有什么能力"清单：以工具注册表 + 档位 + 批准级别为准
+export function buildCapabilityManifest({
+  available = [], allNames = [], g1 = new Set(), labels = {},
+  approvalLevel = "read_auto_write_approve", mode = "task", lite = false,
+} = {}) {
+  const engine = ["plan_write"];
+  const callable = available.filter((n) => !engine.includes(n));
+  const allAuto = approvalLevel === "full_auto";
+  const allApprove = approvalLevel === "all_approve";
+  let auto, need;
+  if (allAuto) { auto = callable; need = []; }
+  else if (allApprove) { auto = []; need = callable; }
+  else { auto = callable.filter((n) => g1.has(n)); need = callable.filter((n) => !g1.has(n)); }
+  const hidden = allNames.filter((n) => !available.includes(n));
+
+  const lines = [];
+  lines.push(mode === "chat"
+    ? "【你的能力清单（对话模式）】本轮是纯对话、不调用工具；任务模式下你可以执行下列操作。用户问能力时如实说明，不要因为当前是对话模式就否认。"
+    : "【你的能力清单（自动生成，以此为准）】");
+  lines.push(`- 自动放行（${auto.length}）：${auto.map((n) => capLabel(labels, n)).join("、") || "无"}`);
+  lines.push(`- 需人工批准（${need.length}）：${need.map((n) => capLabel(labels, n)).join("、") || "无"}`);
+  lines.push("- 引擎级：plan_write（提交/修订执行流程，不属于工具调用）");
+  if (hidden.length) {
+    lines.push(`- 本档不可用（精简档关闭）：${hidden.map((n) => capLabel(labels, n)).join("、")}——不要尝试调用，也不要声称会用；system 中要求这些工具的段落在本档不适用。`);
+  }
+  if (callable.includes("call_expert")) {
+    lines.push("【复核审计员】宣布关键结论或存疑时调用 call_expert(focus, data) 做只读复核；它不替你执行任务。");
+  }
+  lines.push("");
+  lines.push(BOUNDARY_SECTION);
+  return lines.join("\n");
+}
+
+export function buildEnvSection({ project = null, mode = "task", profile = "", approvalLevel = "read_auto_write_approve" } = {}) {
+  const approvalText = {
+    read_auto_write_approve: "读自动 / 写需批准",
+    full_auto: "全部自动",
+    all_approve: "全部需批准",
+  }[approvalLevel] || approvalLevel;
+  const projText = project
+    ? `项目「${project.name}」（黑板事实 ${(project.facts || []).length} 条 / Issue ${(project.issues || []).length} 条 / 模板 ${(project.templates || []).length} 个）`
+    : "未绑定项目（黑板 = AI 全局黑板）";
+  const lines = [
+    "【当前环境】",
+    "- " + projText,
+    "- 模式：" + (mode === "chat" ? "对话模式（纯问答，不调用工具）" : "任务模式（可调用工具）"),
+  ];
+  if (profile === "lite" || profile === "full") {
+    lines.push("- 机制档位：" + (profile === "lite" ? "精简档（工具精简、审查/专家关闭）" : "完整档"));
+  }
+  lines.push("- 批准级别：" + approvalText);
+  return lines.join("\n");
+}
+
 // 静态注册 section（P2b/P2c 灰度新增：110 compaction 常驻提示、120 run_code 说明、130 时间环境）
 const SYSTEM_SECTIONS = [
   { order: -100, key: "identity", content: IDENTITY_SECTION },
@@ -99,11 +150,13 @@ const SYSTEM_SECTIONS = [
 ];
 
 // 动态注入 section（调用方按需传入；空字符串自动丢弃）
-export async function assembleSections({ anchor = "", wsSummary = "", skillsIndex = "" } = {}) {
+export async function assembleSections({ anchor = "", wsSummary = "", skillsIndex = "", capability = "", env = "" } = {}) {
   const dynamic = [
+    { order: -60, key: "capability", content: capability },
     { order: -50, key: "anchor", content: anchor },
     { order: -40, key: "workspace", content: wsSummary },
     { order: -30, key: "skills", content: skillsIndex },
+    { order: 105, key: "envnote", content: env },
   ];
   const all = [...SYSTEM_SECTIONS, ...dynamic].sort((a, b) => a.order - b.order);
   const parts = [];

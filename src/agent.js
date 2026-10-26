@@ -38,7 +38,7 @@ import {
 } from "./guards.js";
 import { runReviewAudit, TOOL_NAMES_CN } from "./experts.js";
 import { buildAnchorBlock, compactionWithSummary, isCheckpointMessage, sanitizeMessageSequence, pruneToolResults } from "./plan.js";
-import { assembleSections, TOOL_DEFINITIONS } from "./prompts.js";
+import { assembleSections, TOOL_DEFINITIONS, buildCapabilityManifest, buildEnvSection } from "./prompts.js";
 import { dispatchTool } from "./executor.js";
 import { taskState, appState, pushStatus, typewriterPush, abortPendingApproval } from "./state.js";
 import { normalizeError, isToolResultFailure } from "./errors.js";
@@ -1273,8 +1273,20 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
   const anchor = buildAnchorBlock(session, facts, debuggeeUrl);
   const ws = await getWorkspace(session.convId);
   const wsSummary = buildWorkspaceSummary(ws);
-  const systemContentBase = await assembleSections({ anchor, wsSummary, skillsIndex: (await buildSkillsIndex("main_model")).replace(/^\n+/, "") });
   const guardProfile = await resolveGuardProfile(config.baseUrl);
+  const approvalLevel = await approvalLevelSetting();
+  const toolDefs = toolDefsForMode(guardProfile, TOOL_DEFINITIONS);
+  const capability = buildCapabilityManifest({
+    available: toolDefs.map((t) => t.name).concat("plan_write"),
+    allNames: TOOL_DEFINITIONS.map((t) => t.name),
+    g1: APPROVAL_G1, labels: TOOL_NAMES_CN, approvalLevel,
+    mode: "task", lite: !!guardProfile.liteTools,
+  });
+  const envNote = buildEnvSection({ project, mode: "task", profile: guardProfile.mode, approvalLevel });
+  const systemContentBase = await assembleSections({
+    anchor, wsSummary, capability, env: envNote,
+    skillsIndex: (await buildSkillsIndex("main_model")).replace(/^\n+/, ""),
+  });
   // 精简档：工具先行指令（本地小模型避免先长篇说明再动手的空转轮次；参照 ReAct/agent 延迟实践）
   const systemContent = guardProfile.mode === "lite"
     ? systemContentBase + "\n\n【精简模式】可以按需调用工具获取页面/网络/脚本数据（get_page_skeleton / search_dom / eval_js / get_network_requests 等）；若暂时拿不到数据，也可基于已知信息直接简要作答。避免长篇大论，直接给出有用回答。"
@@ -1574,12 +1586,21 @@ export async function executeTask(text, isSteer = false, onStatus = null, convId
       if (st && st.type === "reasoning_delta" && st.text) chatReasoning += st.text;
       emit(st);
     };
+    const chatProject = session && session.projectId ? await getProject(session.projectId).catch(() => null) : null;
+    const chatApproval = await approvalLevelSetting();
+    const chatCapability = buildCapabilityManifest({
+      available: TOOL_DEFINITIONS.map((t) => t.name).concat("plan_write"),
+      allNames: TOOL_DEFINITIONS.map((t) => t.name),
+      g1: APPROVAL_G1, labels: TOOL_NAMES_CN, approvalLevel: chatApproval, mode: "chat",
+    });
+    const chatEnv = buildEnvSection({ project: chatProject, mode: "chat", approvalLevel: chatApproval });
     const reply = await runChat(config, text, chatEmit, {
       setAbort: (c) => { taskState.abort = c; },
       setPaused: (v) => { taskState.paused = v; },
       noThink: !!noThink,
       thinkingLimit,
-      progressNote
+      progressNote,
+      capabilityNote: chatCapability + "\n\n" + chatEnv
     });
     if (session) {
       session.messages.push({ role: "assistant", content: reply, ...(chatReasoning ? { reasoning_content: chatReasoning } : {}) });

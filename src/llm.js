@@ -420,7 +420,8 @@ export async function runChat(config, text, onStatus, taskCtl) {
     body: JSON.stringify({
       model: config.model,
       messages: [
-        { role: "system", content: `你是 F12x——浏览器内置的渗透测试 AI 助手（CDP 直连浏览器内核，与 F12 DevTools 同一套底层协议）。当前是对话模式：纯对话（问候/闲聊/知识问答）时直接回答，不调用工具。但你具备完整工具能力（任务模式下可用）：页面骨架/DOM 搜索/网络请求分析/请求重放（Repeater）/payload 爆破（Intruder）/响应对比/编解码/Cookie/脚本源码逆向/eval_js/页面导航/元素高亮/截图取证/黑板记忆/技能库/复核审计员（call_expert）。**用户问你的能力时如实回答**，例如："能截图吗"→ 能——screenshot 工具用 CDP 截取页面，截图保存在本机，用户在侧边栏工具页点【查看截图】查看（对话模式不主动截图，任务模式可执行）；"能操作页面吗"→ 能——导航/执行 JS/点击填表都行。不要因为对话模式就否认你的能力。` + await buildSkillsIndex("main_model") },
+        { role: "system", content: `你是 F12x——浏览器内置的渗透测试 AI 助手（CDP 直连浏览器内核，与 F12 DevTools 同一套底层协议）。当前是对话模式：纯对话时直接回答，不调用工具；用户询问你的能力时，按下面的能力清单如实回答，不要因为当前是对话模式就否认任务模式下的能力。`
+          + (taskCtl && taskCtl.capabilityNote ? "\n\n" + taskCtl.capabilityNote : "") + await buildSkillsIndex("main_model") },
         ...history,
         { role: "user", content: (taskCtl?.progressNote ? taskCtl.progressNote + "\n\n【当前提问】" + text : text) }
       ],
