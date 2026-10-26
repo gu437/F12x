@@ -214,6 +214,8 @@ function onStreamMessage(msg) {
 function switchView(view) {
   app.currentView = view;
   document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === view));
+  const ps = $("project-selector");
+  if (ps) ps.classList.toggle("hidden", view === "ai"); // AI 页不出现项目概念
   const doSwitch = () => {
     document.querySelectorAll(".view").forEach(v => {
       const active = v.id === "view-" + view;
@@ -1749,9 +1751,7 @@ function initAIModule() {
   document.querySelectorAll("#ai-detail .ai-detail-tabs .tab").forEach(t => t.addEventListener("click", () => setAIDetailTab(t.dataset.aiTab)));
   $("ai-back").addEventListener("click", closeAIDetail);
   $("ai-new-conv").addEventListener("click", newConversationFlow);
-  $("ai-new-project").addEventListener("click", () => switchView("project")); // 项目统一在「项目」页创建/管理
-  $("ai-set-project").addEventListener("click", setConversationProject);
-  $("ai-rename-btn").addEventListener("click", () => aiDetailConv && renameConversationFlow(aiDetailConv));
+      $("ai-rename-btn").addEventListener("click", () => aiDetailConv && renameConversationFlow(aiDetailConv));
   $("ai-del-btn").addEventListener("click", () => aiDetailConv && deleteConversationFlow(aiDetailConv));
   // 聊天：发送 / 停止 / 快捷键改为 init() 开头的 document 级委托绑定（见 bindChatDelegates）。
   // 原因：委托不依赖本模块前序 init* 全部成功，即使任何初始化抛错，发送入口也一定可用。
@@ -2828,14 +2828,15 @@ async function aiSendFromPage(text, titleHint = "页面分析", autoSend = true,
 
 async function pickConversationForAI({ text, titleHint = "页面分析", autoSend = true, projectId = "" }) {
   const r = await api("ai:conversations");
-  const list = r.ok ? (r.conversations || []) : [];
-  const pid = projectId || (app.currentProject && app.currentProject.id) || "";
-  const pname = (app.projects.find((x) => x.id === pid) || {}).name || (app.currentProject && app.currentProject.name) || "未绑定项目";
-  const opts = list.map((c) => `<option value="${esc(c.convId)}">${esc(c.title || "未命名")} · ${c.projectId ? "项目" : "独立"} · ${c.msgCount || 0} 条</option>`).join("");
+  const all = r.ok ? (r.conversations || []) : [];
+  const list = projectId ? all.filter((c) => (c.projectId || null) === projectId) : all;
+  const pid = projectId || "";
+  const pname = pid ? ((app.projects.find((x) => x.id === pid) || {}).name || "所选项目") : "";
+  const opts = list.map((c) => `<option value="${esc(c.convId)}">${esc(c.title || "未命名")} · ${c.msgCount || 0} 条</option>`).join("");
   openModal(`<h3>送到哪个会话？</h3>
-    <div class="ai-pick-hint">选已有会话，或新建（新会话会绑定项目「${esc(pname)}」）</div>
+    <div class="ai-pick-hint">${pid ? "该项目下" + list.length + " 个会话；也可新建（会绑定该项目）" : "选已有会话，或新建一条独立会话"}</div>
     <select id="ap-conv">
-      <option value="__new__">＋ 新建会话（绑定：${esc(pname)}）</option>
+      <option value="__new__">${pid ? "＋ 新建会话（绑定：" + esc(pname) + "）" : "＋ 新建会话（独立会话）"}</option>
       ${opts}
     </select>
     <input id="ap-title" class="text-input hidden" placeholder="新会话标题（可选）" value="${esc(titleHint)}" />
@@ -3493,27 +3494,13 @@ function renderAudit() {
 }
 
 // AI 会话列表（AI 数据区：任务/聊天记录 + 审计回看，独立于站点工作区）
-// ===== AI 项目（会话可绑定项目 → 黑板跨会话共享） =====
-let aiProjects = []; // 项目列表缓存（id→name 展示用）
-async function loadAIProjects() {
-  const r = await api("project:list");
-  aiProjects = r.ok ? (r.projects || []) : [];
-  return aiProjects;
-}
-const projName = (id) => (aiProjects.find(p => p.id === id) || {}).name || "";
-
 async function renderAISessions() {
   const pane = $("ai-convs");
   pane.innerHTML = '<div class="placeholder">加载会话…</div>';
   const r = await api("ai:conversations");
-  await loadAIProjects();
   if (!r.ok) { pane.innerHTML = `<div class="placeholder">加载失败：${esc(r.error)}</div>`; return; }
-  const convs = r.conversations || [];
-  if (!convs.length) { pane.innerHTML = '<div class="placeholder">暂无会话（AI 任务/聊天结束后自动记录在此；项目在「项目」页创建）</div>'; return; }
-  // 按项目分组：项目 → 其下绑定的会话；未绑定的归入"独立会话"组
-  const groupBy = (id) => convs.filter(c => (c.projectId || null) === id);
-  const bound = (aiProjects.length ? aiProjects : []).map(p => ({ project: p, convs: groupBy(p.id) })).filter(g => g.convs.length);
-  const orphans = convs.filter(c => !c.projectId);
+  const convs = (r.conversations || []).slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (!convs.length) { pane.innerHTML = '<div class="placeholder">暂无会话（AI 任务/聊天结束后自动记录在此）</div>'; return; }
   const itemHtml = (c) => `
     <div class="conv-item" data-id="${esc(c.convId)}">
       <div class="ci-head">
@@ -3527,21 +3514,7 @@ async function renderAISessions() {
       </div>
       <div class="ci-meta">消息 ${c.msgCount} · 审计 ${c.auditCount ?? (c.audit || []).length}</div>
     </div>`;
-  let html = "";
-  for (const g of bound) {
-    html += `<div class="ai-proj-group" data-pid="${esc(g.project.id)}">
-      <div class="ai-proj-group-head">
-        <span class="api-name">📁 ${esc(g.project.name)}</span>
-        <span class="api-meta">${g.convs.length} 会话 · ${g.project.factsCount} 事实</span>
-      </div>${g.convs.map(itemHtml).join("")}</div>`;
-  }
-  if (orphans.length) {
-    html += `<div class="ai-proj-group">
-      <div class="ai-proj-group-head"><span class="api-name">🧩 独立会话</span><span class="api-meta">${orphans.length} 个 · 不共享黑板</span></div>
-      ${orphans.map(itemHtml).join("")}</div>`;
-  }
-  if (!html) html = '<div class="placeholder">暂无会话（AI 任务/聊天结束后自动记录在此）</div>';
-  pane.innerHTML = html;
+  pane.innerHTML = convs.map(itemHtml).join("");
   pane.querySelectorAll(".conv-item").forEach(el => el.addEventListener("click", (ev) => {
     const c = convs.find(x => x.convId === el.dataset.id);
     if (!c) return;
@@ -3584,57 +3557,21 @@ async function deleteConversationFlow(c) {
   } else toast("删除失败：" + (r.error || ""));
 }
 
-// 新建会话：可选绑定项目（绑定后黑板走项目黑板，跨会话共享）
+// 新建会话（AI 页只创建独立会话；项目内会话由项目页新建）
 async function newConversationFlow() {
-  const projects = await loadAIProjects();
   openModal(`<h3>新建会话</h3>
     <label>会话标题（可选，留空自动命名）</label><input id="nc-title" placeholder="例如：目标站点信息收集" />
-    <label>绑定项目</label>
-    <select id="nc-project">
-      <option value="">不绑定（独立会话 · AI 全局黑板）</option>
-      ${projects.map(p => `<option value="${esc(p.id)}">📁 ${esc(p.name)}（${p.factsCount} 事实）</option>`).join("")}
-    </select>
-    <div style="font-size:11px;color:var(--text-4)">绑定项目后，该会话任务中沉淀/读取的事实与绑定同一项目的会话共享。</div>
     <div class="modal-actions"><button>取消</button><button id="nc-ok" class="primary">创建</button></div>`);
   const box = document.querySelector(".modal-box");
   box.querySelector(".modal-actions button").addEventListener("click", closeModal);
   box.querySelector("#nc-ok").addEventListener("click", async () => {
-    const r = await api("ai:conversation_create", {
-      title: $("nc-title").value.trim() || undefined,
-      projectId: $("nc-project").value || null
-    });
+    const r = await api("ai:conversation_create", { title: $("nc-title").value.trim() || undefined });
     closeModal();
     if (r.ok) {
       toast("已创建会话");
       if (r.conv) openAIDetail({ type: "chat", msgCount: 0, updatedAt: Date.now(), ...r.conv });
       else await renderAISessions();
-    }
-    else toast("创建失败：" + (r.error || ""));
-  });
-}
-
-// 会话绑定/解绑项目（详情头按钮）
-async function setConversationProject() {
-  if (!aiDetailConv) return;
-  const projects = await loadAIProjects();
-  openModal(`<h3>会话绑定项目</h3>
-    <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">绑定后该会话的黑板读写指向项目黑板，与绑定同一项目的其他会话跨会话共享事实；不绑定 = 独立会话（AI 全局黑板）。</div>
-    <select id="sp-project">
-      <option value="">不绑定（独立会话 · AI 全局黑板）</option>
-      ${projects.map(p => `<option value="${esc(p.id)}" ${aiDetailConv.projectId === p.id ? "selected" : ""}>📁 ${esc(p.name)}（${p.factsCount} 事实）</option>`).join("")}
-    </select>
-    <div class="modal-actions"><button>取消</button><button id="sp-ok" class="primary">保存</button></div>`);
-  const box = document.querySelector(".modal-box");
-  box.querySelector(".modal-actions button").addEventListener("click", closeModal);
-  box.querySelector("#sp-ok").addEventListener("click", async () => {
-    const r = await api("ai:conversation_set_project", { convId: aiDetailConv.convId, projectId: $("sp-project").value || null });
-    closeModal();
-    if (r.ok) {
-      aiDetailConv.projectId = r.projectId;
-      $("ai-set-project").textContent = r.projectId ? "改绑" : "绑定项目";
-      toast(r.projectId ? "已绑定项目，黑板切换为项目黑板" : "已设为独立会话，黑板切换为 AI 全局黑板");
-      renderConvFindings();
-    } else toast("操作失败：" + (r.error || ""));
+    } else toast("创建失败：" + (r.error || ""));
   });
 }
 
@@ -3661,7 +3598,6 @@ async function openAIDetail(c) {
   $("ai-detail").classList.remove("hidden");
   $("ai-detail-title").textContent = c.title || "未命名会话";
   $("ai-detail-meta").textContent = `${c.type === "task" ? "任务" : "聊天"} · 消息 ${c.msgCount} · ${new Date(c.updatedAt || 0).toLocaleString()}`;
-  $("ai-set-project").textContent = c.projectId ? "改绑" : "绑定项目";
   // 默认落在「聊天」页签（与会话记录互斥）；记录子页签复位到黑板
   setAIDetailTab("chat");
   chatSetBusy(false); // 复位输入区并刷新模式提示（任务模式/对话模式）
@@ -3708,7 +3644,7 @@ function closeAIDetail() {
 async function renderConvFindings() {
   const pane = $("ai-d-findings");
   if (!aiDetailConv) return;
-  const scope = aiDetailConv.projectId ? `📁 项目黑板（${esc(projName(aiDetailConv.projectId) || "项目")} · 跨会话共享全部事实）` : "🧠 AI 全局黑板";
+  const scope = "🧠 会话黑板（本会话可见的事实）";
   const pid = aiDetailConv.projectId || null;
   // 读侧精选（黑板优化 A）：拉全类别（endpoint/credential/chain 也可见），按类别分组展示
   const r = await api("ai:findings", { convId: pid ? null : aiDetailConv.convId, projectId: pid, category: "all" });
