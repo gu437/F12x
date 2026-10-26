@@ -1701,3 +1701,16 @@ body {
 
 /* AI 会话选择弹层 */
 .ai-pick-hint { font-size: 11px; color: var(--text-3, #666); margin: 4px 0 8px; }
+
+/* 上下文可观察性面板（会话顶部） */
+.ctx-panel { margin: 4px 8px 6px; border: 1px solid var(--surface-4, #ddd); border-radius: 8px; background: var(--surface-1, #fff); }
+.ctx-panel > summary { cursor: pointer; padding: 6px 10px; font-size: 11px; font-weight: 600; color: var(--text-2, #333); list-style: none; }
+.ctx-panel > summary::-webkit-details-marker { display: none; }
+.ctx-panel > summary::before { content: "▸ "; color: var(--text-4, #888); }
+.ctx-panel[open] > summary::before { content: "▾ "; }
+.ctx-body { padding: 0 10px 8px; max-height: 220px; overflow-y: auto; }
+.ctx-fact { display: flex; gap: 6px; align-items: baseline; padding: 3px 0; border-top: 1px dashed var(--surface-4, #eee); font-size: 10px; }
+.ctx-fact code { flex: none; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--brand, #4176e6); }
+.ctx-fact span { flex: 1; color: var(--text-2, #444); }
+.ctx-fact em { flex: none; color: var(--text-4, #999); font-style: normal; }
+.ctx-meta { margin-top: 6px; font-size: 10px; color: var(--text-4, #888); }

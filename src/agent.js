@@ -30,7 +30,7 @@ import {
   buildSkillsIndex, getProject, saveConversation, getActiveConversation, getConversation, setActiveConversation,
   getWorkspace,
   appendWorkspaceEntry, buildWorkspaceSummary, publishToBlackboard, AI_PROJECT_ID,
-  buildCheckpoint, renderCheckpoint
+  buildCheckpoint, renderCheckpoint, pickBlackboardFacts
 } from "./memory.js";
 import {
   detectOverthinking, detectGuessing, detectUnverifiedClaim, toolResultHasSubstance,
@@ -1311,6 +1311,27 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
   const userTurnMsg = appendTurnMessages(messages, { channel: "user", content: userMessage }); // §3.2：用户消息统一入口
   session.messages.push({ ...userTurnMsg }); // 记录即时可见（带 _seq——flush 水位据此去重，防双写）
   const historyStartIdx = messages.length;
+  // 上下文可观察性：记录本轮注入了哪些项目事实与预算（面板顶部可展开）
+  try {
+    const picked = facts.length ? pickBlackboardFacts(facts, 10) : [];
+    session.contextFacts = {
+      at: Date.now(),
+      projectId: session.projectId || null,
+      projectName: project ? (project.name || "") : "",
+      total: facts.length,
+      items: picked.map((f) => ({
+        key: f.key,
+        summary: String(f.summary || "").substring(0, 300),
+        confidence: f.confidence || "",
+        category: f.category || "misc",
+      })),
+    };
+    session.contextBudget = {
+      at: Date.now(), window: ctxWindow, pressure: pressureThreshold, retain: retainTail,
+      mode: "task", profile: guardProfile.mode,
+    };
+    pushStatus({ type: "context:snapshot", convId: session.convId, context: session.contextFacts, budget: session.contextBudget });
+  } catch (e) { /* 快照失败不影响任务 */ }
   flushSession(session, { force: true }); // 新任务即刻入库 + 广播（会话列表/记录首屏不再等任务结束）
 
   if (onStatus) onStatus({ type: "thinking_text", text: "正在分析当前页面...", round: 0 });

@@ -3052,10 +3052,43 @@ async function chatRefreshRecords() {
   if (!r.ok || !r.conversation) return;
   aiDetailConv = r.conversation;
   const c = r.conversation;
+  renderContextPanel(aiDetailConv);
   $("ai-detail-meta").textContent = `${c.type === "task" ? "任务" : "聊天"} · 消息 ${(c.messages || []).length} · ${new Date(c.updatedAt || 0).toLocaleString()}`;
   renderConvFindings();
   renderConvAudit();
   renderConvTrajectory();
+}
+
+// 上下文可观察性：显示本轮注入了哪些项目事实、预算与压缩历史
+function ctxAgo(ts) {
+  if (!ts) return "";
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return s + " 秒前";
+  if (s < 3600) return Math.round(s / 60) + " 分钟前";
+  if (s < 86400) return Math.round(s / 3600) + " 小时前";
+  return Math.round(s / 86400) + " 天前";
+}
+function renderContextPanel(conv) {
+  const panel = $("ctx-panel"), sum = $("ctx-summary"), body = $("ctx-body");
+  if (!panel || !sum || !body) return;
+  const c = conv && conv.contextFacts;
+  if (!c) { panel.classList.add("hidden"); return; }
+  const items = Array.isArray(c.items) ? c.items : [];
+  const evs = (conv && Array.isArray(conv.events)) ? conv.events : [];
+  const comps = evs.filter((e) => e && e.type === "compaction");
+  const last = comps.length ? comps[comps.length - 1] : null;
+  const compTxt = comps.length ? `压缩 ${comps.length} 次` : "尚未压缩";
+  sum.textContent = `🧠 上下文：${c.projectName ? "项目「" + c.projectName + "」" : "未绑定项目"} · 事实 ${items.length}/${c.total || items.length} · ${compTxt}`;
+  const b = conv.contextBudget;
+  const budget = b ? `窗口 ${b.window} · 压力阈值 ${b.pressure} · 保留尾部 ${b.retain}` : "";
+  const compDetail = last
+    ? `最近压缩：${esc(last.method || "?")} / ${esc(last.trigger || "?")}${last.at ? " @" + esc(String(last.at)) + "t" : ""} · ${new Date(last.ts || 0).toLocaleString()}（${ctxAgo(last.ts)}）`
+    : "";
+  body.innerHTML = (items.length
+    ? items.map((f) => `<div class="ctx-fact"><code>${esc(f.key)}</code><span>${esc(f.summary || "")}</span><em>${esc(f.confidence || "")}</em></div>`).join("")
+    : '<div class="placeholder">本次未注入项目事实</div>')
+    + `<div class="ctx-meta">${[budget, "快照时间 " + new Date(c.at || 0).toLocaleString(), compDetail].filter(Boolean).join(" · ")}</div>`;
+  panel.classList.remove("hidden");
 }
 
 // 实时状态 → 追加到当前聊天（仅渲染"本会话发起的那一轮"）
@@ -3079,6 +3112,14 @@ function chatOnStatus(st) {
   }
   // 会话增量回执：即使详情未打开（列表态）也要处理，所以放在 open 早退之前
   if (st && st.type === "conversation:changed") { chatOnConversationChanged(st.convId); return; }
+  if (st && st.type === "context:snapshot") {
+    if (aiDetailConv && aiDetailConv.convId === st.convId) {
+      aiDetailConv.contextFacts = st.context || null;
+      aiDetailConv.contextBudget = st.budget || null;
+      renderContextPanel(aiDetailConv);
+    }
+    return;
+  }
   if (!chatUI.open || !chatUI.convId || !st || typeof st !== "object") return;
   const t = st.type || (typeof st.status === "string" ? st.status : "");
   if (t === "audit") return; // 审计已有专门 tab，聊天里不重复刷
@@ -3164,6 +3205,13 @@ function chatOnStatus(st) {
     if (st.summaryTokens) bits.push("摘要 " + st.summaryTokens + "t");
     const kept = st.compactionId ? "（" + escapeHtml(String(st.compactionId)) + "）" : "";
     chatFlowLine("ok", "🗜 上下文已压缩" + (bits.length ? "：" + bits.join(" → ") : "") + kept);
+    if (aiDetailConv && (!st.convId || st.convId === aiDetailConv.convId)) {
+      aiDetailConv.events = Array.isArray(aiDetailConv.events) ? aiDetailConv.events : [];
+      aiDetailConv.events.push({ type: "compaction", ts: Date.now(), method: st.method || "summary",
+        trigger: st.trigger || "pressure", at: st.droppedTokens || 0,
+        ...(st.compactionId ? { compactionId: st.compactionId } : {}) });
+      renderContextPanel(aiDetailConv);
+    }
     return;
   }
   if (t === "ai:tool_timeout") { chatFlowLine("warn", "⏱ 工具 " + escapeHtml(String(st.tool || "")) + " 超时"); return; }
@@ -3642,6 +3690,7 @@ async function openAIDetail(c) {
   }
   aiDetailConv = r.conversation;
   const conv = r.conversation;
+  renderContextPanel(aiDetailConv);
   await chatModelRefresh(); // 按该会话记忆的模型（无则默认）刷新聊天框模型选择器
   $("ai-detail-meta").textContent = `${conv.type === "task" ? "任务" : "聊天"} · 消息 ${(conv.messages || []).length} · ${new Date(conv.updatedAt || 0).toLocaleString()}`;
   renderConvFindings();

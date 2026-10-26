@@ -687,6 +687,8 @@ export function handleMessage(message, sender, sendResponse) {
             audit: Array.isArray(full.audit) ? full.audit : [],
             events: Array.isArray(full.events) ? full.events : [],
             shots: Array.isArray(full.shots) ? full.shots : [], // 方案 001 / P5：截图引用（图片本体在 shot:<convId>:<key>）
+            contextFacts: full.contextFacts || null, // 上下文可观察性：上轮注入的事实
+            contextBudget: full.contextBudget || null,
             checkpoint: full.checkpoint ? {
               at: full.checkpoint.at, lastStepDesc: full.checkpoint.lastStepDesc || "",
               goal: full.checkpoint.goal || ""

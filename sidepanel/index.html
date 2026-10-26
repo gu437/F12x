@@ -365,6 +365,10 @@
             </div>
             <!-- 聊天页：消息流 + 底部输入（纯对话） -->
             <div id="ai-chat" class="ai-chat ai-page ai-page-chat active">
+              <details id="ctx-panel" class="ctx-panel hidden">
+                <summary id="ctx-summary">上下文</summary>
+                <div id="ctx-body" class="ctx-body"></div>
+              </details>
               <div id="ai-chat-msgs" class="ai-chat-msgs"></div>
               <!-- Prompt 导航：聊天区右侧悬浮（绝对定位，不占布局列；默认按屏宽折叠/展开） -->
               <aside id="pn-nav" class="pn-nav collapsed" aria-label="Prompt 导航">
