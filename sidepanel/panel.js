@@ -3342,15 +3342,15 @@ function settingsModelsRender() {
   if (!modelsCache.some(m => m.id === modelActiveId)) modelActiveId = modelsCache[0].id;
   wrap.innerHTML = modelsCache.map((m, idx) => `
     <div class="settings-model-row">
-      <div class="settings-model-top">
+      <div class="smr-top">
         <label class="smr-def ${m.id === modelActiveId ? "active" : ""}" title="设为默认（新会话跟随；本设置页内即改即生效）"><input type="radio" name="smr-default" value="${esc(m.id)}" ${m.id === modelActiveId ? "checked" : ""} />默认</label>
-        <input class="text-input smr-name" type="text" placeholder="名称（如 DeepSeek / 本地 Qwen）" value="${esc(m.name || "")}" data-idx="${idx}" data-f="name" />
+        <input class="text-input smr-name" type="text" placeholder="模型名称（如 DeepSeek / 本地 Qwen）" value="${esc(m.name || "")}" data-idx="${idx}" data-f="name" />
         <button type="button" class="mini-btn danger" data-del="${idx}" title="删除该模型">删除</button>
       </div>
-      <div class="settings-model-fields">
-        <input class="text-input" type="text" placeholder="Base URL（如 http://127.0.0.1:11434）" value="${esc(m.baseUrl || "")}" data-idx="${idx}" data-f="baseUrl" />
-        <input class="text-input" type="password" placeholder="API Key（本地回环可留空）" value="${esc(m.apiKey || "")}" data-idx="${idx}" data-f="apiKey" />
-        <input class="text-input smr-model" type="text" placeholder="模型名（如 qwen2.5:7b / deepseek-chat）" value="${esc(m.model || "")}" data-idx="${idx}" data-f="model" />
+      <div class="smr-fields">
+        <label class="smr-label">Base URL<input class="text-input" type="text" placeholder="http://127.0.0.1:11434" value="${esc(m.baseUrl || "")}" data-idx="${idx}" data-f="baseUrl" /></label>
+        <label class="smr-label">API Key<input class="text-input" type="password" placeholder="本地回环可留空" value="${esc(m.apiKey || "")}" data-idx="${idx}" data-f="apiKey" /></label>
+        <label class="smr-label">模型名<input class="text-input" type="text" placeholder="qwen2.5:7b / deepseek-chat" value="${esc(m.model || "")}" data-idx="${idx}" data-f="model" /></label>
       </div>
     </div>`).join("");
   wrap.querySelectorAll("input").forEach((inp) => {

@@ -440,39 +440,67 @@
 
     <!-- ========== 设置弹层 ========== -->
     <div id="settings-panel" class="overlay hidden">
-      <div class="overlay-content">
-        <h2>设置</h2>
-        <h3>AI 设置</h3>
-        <div class="settings-model-head">
-          <span>模型（每行一条：名称 + API Key + Base URL + 模型名）</span>
-          <button id="settings-model-add" class="mini-btn" type="button">+ 添加模型</button>
-        </div>
-        <div id="settings-models" class="settings-models"></div>
-        <div class="settings-hint">运行时按「会话所选模型 / 设置中的默认模型」调用；可在 AI 聊天输入框上方切换（只对本会话生效）。本地回环服务（Ollama / LM Studio 等 127.0.0.1 / localhost）的 Key <b>可留空</b>，保存时自动填占位。</div>
-        <label>思考硬上限（字符，0 = 不限）</label>
-        <input id="settings-thinklimit" type="number" min="0" step="100" placeholder="0 = 不限；>0 时超限自动改直接作答" />
-        <label>LLM API 域名白名单（每行一个）</label>
-        <textarea id="settings-llm" rows="4">https://api.deepseek.com
+      <div class="overlay-content settings-sheet" role="dialog" aria-modal="true" aria-label="设置">
+        <header class="set-head">
+          <h2>设置</h2>
+          <p class="set-sub">模型连接与 AI 行为</p>
+        </header>
+        <div class="set-scroll">
+          <section class="set-section">
+            <div class="set-section-head">
+              <h3>模型</h3>
+              <button id="settings-model-add" class="mini-btn" type="button">+ 添加模型</button>
+            </div>
+            <p class="set-desc">会话按所选模型调用；默认模型用于新会话。本地服务（127.0.0.1 / localhost）的 Key 可留空。</p>
+            <div id="settings-models" class="settings-models"></div>
+          </section>
+
+          <section class="set-section">
+            <h3>生成</h3>
+            <div class="set-field">
+              <label for="settings-thinklimit">思考上限</label>
+              <input id="settings-thinklimit" type="number" min="0" step="100" placeholder="0 = 不限" />
+              <p class="set-desc">按字符计；0 表示不限，超出后自动改为直接作答。</p>
+            </div>
+            <div class="set-field">
+              <label for="settings-llm">默认 API 地址</label>
+              <textarea id="settings-llm" rows="4" spellcheck="false">https://api.deepseek.com
 https://api.openai.com
 https://api.anthropic.com
 http://localhost:11434</textarea>
-        <h3>AI 批准级别</h3>
-        <select id="settings-approval">
-          <option value="read_auto_write_approve">读自动 / 写需批准（默认）</option>
-          <option value="full_auto">全部自动</option>
-          <option value="all_approve">全部需批准</option>
-        </select>
-        <h3>AI 机制档位（本地小模型减负）</h3>
-        <select id="settings-guard">
-          <option value="auto">自动：本地模型(127.0.0.1/localhost)精简 · 云端完整</option>
-          <option value="lite">始终精简（关闭 对抗审查/专家复核/强制探测/plan 收尾硬门）</option>
-          <option value="full">始终完整（全部云端机制）</option>
-        </select>
-        <div class="settings-hint">精简档保留：工具批准闸、上下文压缩、重复工具提醒、未验证结论拦截。云端大模型自动恢复全部机制。</div>
-        <label class="mini-inline" style="margin:8px 0 2px" title="Arc iGPU+Vulkan 空闲后首个请求有数秒~数十秒唤醒延迟；开启后空闲期每 40s 发一次 1-token 极小请求保持活跃"><input type="checkbox" id="settings-localwarm" checked /> 本地空闲保活（减少空闲后“第一问”的延迟，仅本地模型生效）</label>
+              <p class="set-desc">每行一个；首个作为未填 Base URL 时的默认地址，实际请求以模型行的 Base URL 为准。</p>
+            </div>
+          </section>
+
+          <section class="set-section">
+            <h3>行为</h3>
+            <div class="set-field">
+              <label for="settings-approval">写操作批准</label>
+              <select id="settings-approval">
+                <option value="read_auto_write_approve">读自动 / 写需批准（默认）</option>
+                <option value="full_auto">全部自动</option>
+                <option value="all_approve">全部需批准</option>
+              </select>
+              <p class="set-desc">工具执行前是否需要你确认；默认只读自动、写操作需批准。</p>
+            </div>
+            <div class="set-field">
+              <label for="settings-guard">运行档位</label>
+              <select id="settings-guard">
+                <option value="auto">自动：本地精简 · 云端完整</option>
+                <option value="lite">始终精简（关闭对抗审查 / 专家复核 / 强制探测 / plan 收尾硬门）</option>
+                <option value="full">始终完整（全部云端机制）</option>
+              </select>
+              <p class="set-desc">精简档适合本地小模型；云端大模型建议完整档。</p>
+            </div>
+            <div class="set-field set-check">
+              <label class="set-check-row" for="settings-localwarm"><input type="checkbox" id="settings-localwarm" checked /> <span>本地空闲保活</span></label>
+              <p class="set-desc">仅本地模型生效：空闲时每 40 秒发一次极小请求，减少空闲后首问的等待。</p>
+            </div>
+          </section>
+        </div>
         <div class="settings-actions">
-          <button id="settings-save" class="primary">保存</button>
-          <button id="settings-cancel" class="secondary">取消</button>
+          <button id="settings-cancel" class="secondary" type="button">取消</button>
+          <button id="settings-save" class="primary" type="button">保存</button>
         </div>
       </div>
     </div>
