@@ -1,0 +1,29 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Validate manifest
+        run: |
+          node -e "const m=require('./manifest.json'); if(m.manifest_version!==3) throw new Error('MV3 required'); console.log(m.name, m.version)"
+      - name: Syntax check
+        run: |
+          for f in src/*.js sidepanel/*.js background.js; do
+            node --check "$f"
+          done
+      - name: README assets
+        run: test -f docs/images/readme-square.png

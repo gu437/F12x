@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · chore：发布 0.4.0 与仓库标准化
+- 改了什么：版本 0.3.0 → 0.4.0（manifest / README / state / router / background 五处同步）；README 改为"浏览器原生、人类主导的授权与注入验证工作台"定位，加入 900×900 正方形 Playwright 界面图与路线图；新增专有 `LICENSE`（版权人 朝悦 / @gu437，保留所有权利）、`THIRD_PARTY_NOTICES.md`（Open Props MIT）、`SECURITY.md`、`.editorconfig`、`.github/workflows/verify.yml`（manifest + 语法 + README 资源检查）。
+- 为什么：0.4.0 是证据/身份/矩阵/序列/基线/备份/报告/AI 接入的结构性版本；对外发布需要明确版权、第三方许可、安全报告渠道与最小 CI。
+- 验证：`dev/run.mjs` 110/110；五处版本一致；CI 等价命令通过；README 图片存在。
+- 提交：未发布
+
 ### 2026-10-27 · fix：移除证据 2MB 截断（证据完整保存）
 - 改了什么：`evidence.js` 删除 `EVIDENCE_BODY_MAX` 与 `clipBody` 截断逻辑，响应体完整入库，`truncated` 恒为 false；L1 改为断言大响应完整保存；手册与 009 方案同步为"不设上限"。
 - 为什么：证据必须可复现、可核对；截断会让 hash 按截断内容计算、diff 漏尾部字段、报告不完整。此前 2MB 是未经确认的保护性限制，违反项目"不先加约束"原则。

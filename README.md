@@ -1,15 +1,20 @@
-# F12x（Chrome MV3 扩展 · 当前版本 0.3.0）
+# F12x（Chrome MV3 · 当前版本 0.4.0）
 
-用户主导的浏览器工具台：**F12 全能力 + Burp 精简版**，内建可选的 AI 聊天工作台。
+浏览器原生、人类主导的 **Web/API 授权与注入验证工作台**；手动功能不依赖 AI，内建可选 AI 工作台。
 Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加载已解压的扩展程序」安装。
 
 **核心理念：用户是最高驱动者。** 全部手动功能不依赖 AI、不依赖网络与后端；AI 只是辅助工作台。任何 AI 产出都应落到可核对、可留痕的本地记录（黑板 / 审计 / Issue）里，由人最终裁决。
 
 - 无自有后端、无遥测；LLM API Key 只保存在 `chrome.storage.local`，代码内无硬编码密钥。
 - 所有记录（Issue、Repeater 历史、待批准、黑板事实、会话审计）同样只存本地。
-- 仓库在 `D:\dsh会话\F12x\F12x`（git 管理）；工作区级工程约定见上级目录 `AGENTS.md`；**每次改动的历史（改了什么 / 为什么 / 怎么验 / 提交）见 [`CHANGELOG.md`](CHANGELOG.md)**。
-- **完整使用手册（逐控件说明 + 19 张界面截图）见 [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md)**。
+- **每次改动的历史（改了什么 / 为什么 / 怎么验 / 提交）见 [`CHANGELOG.md`](CHANGELOG.md)**。
+- **完整使用手册（逐控件说明 + 配套界面截图）见 [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md)**。
 
+## 界面
+
+![F12x 900×900 测试窗口](docs/images/readme-square.png)
+
+> 900×900 Playwright 测试窗口（网络视图；演示数据）。
 ## 快速开始
 
 1. 打开 `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」，选择本目录。
@@ -130,7 +135,7 @@ AI 任务专用（不可手动直调）：`upsert_fact` `get_fact` `rebuttal_che
 无构建、无测试框架，验证靠三件事：
 
 ```powershell
-cd D:\dsh会话\F12x\F12x
+cd F12x
 
 # ① 全量语法自检（Node 24 的 --check 对 ESM 与经典脚本都可用）
 Get-ChildItem src\*.js | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE) { "FAIL $($_.Name)" } }
@@ -172,30 +177,18 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 - Intruder「停止」已接线（`tool:intruder_stop` → `AbortController`，工具逐请求检查 signal 并返回 `interrupted`）；请求头与注入头在面板已可填。
 - Cookie 的「显示值」开关只决定是否向浏览器读取 value；列表始终按掩码渲染，点击单元格才显示完整值；同名 Cookie 只命中第一条，删除 / 编辑按 `https://域名` 拼 URL。
 
-## 近期修复（0.2.1）
-
-- `navigate` 工具全量修复（成功分支补 `ok:true`，此前所有合法导航被提前判失败）。
-- 手动工具统一错误契约（`toolRun`：底层 `{error}` 不再被包装成 `ok:true`，坏 id 等假成功消除）。
-- `cookie:set` 校验 CDP `Network.setCookie` 的 `success`（失败不再假成功）。
-- AI 引擎：lite 档精简工具面（18 工具 + 描述截断）、机制档位、文本轮被拒 ≥5 次自动放行收尾、空转 / 截断提示更清晰。
-- 页面浮条（执行 / 导航指示器）改 F12x 黑白样式 + 动作化可读摘要（`eval_js` 显示"操作目标 / 请求地址"而非整段代码）；导航"已到达"提示跟随目标页并延长展示。
-- 网络表渲染链路加防御与诊断（`[F12x] renderNetworkTable 异常：…` 可见可定位）。
-- 主题 skin 数值抄自 DeepSeek Harness / Open Props（灰阶 / 发丝边框 / 圆角 / 字体栈），图标改为透明底（RGBA）。
-
-## 本次修复（通读全量源码后）
-
-- **Intruder 停止真正生效**：新增 `tool:intruder_stop`，路由层持 `AbortController` 并下发给 `intruder`；面板「停止」不再误发 `ai:stop`，结果摘要显示「已中断（发出 N/M）」。
-- **Issue 有了独立入口**：顶栏新增剪贴板按钮（无 Issue 时空徽标隐藏），与网络详情「→ Issue」并存。
-- **Repeater 同源重放超时真正生效**：15s 外置定时器改为页面上下文内的 12s `AbortController`（外层定时器管不到页面里的 fetch）；失败时**真的**回退扩展 fetch，并在 `note` 里写明失败原因（原注释声称回退、代码直接返回）。
-- **面板补齐两个被丢弃的事件**：`expert_tool_done`（专家每步 ✓/✗ 行）、`ai:compaction_done`（压缩落地回执：丢几轮 / 多少 token → 摘要多少 token）。
-- **返回契约补齐**：`eval_js` 成功带 `ok:true`、异常带 `ok:false` + `TOOL_EXECUTION_ERROR`；`navigate` 空 URL 分支补 `ok:false`。
-- **恢复分栏拖拽**：补回脚本列表（宽度）与网络详情（高度）的 `.resizer` 元素——`initResizers()` 与 `openNetworkDetail()` 早已引用它们，此前因元素缺失而全程空转。
-- 顺手修正：专家卡 `aria-expanded` 与"默认折叠"实现不一致（读屏会误报展开态）。
-
-验证：`node --check` 全部 19 个 JS 通过；上述行为需在 `chrome://extensions` 重载扩展后手动回归（Intruder 停止 / 顶栏 Issue / 同源重放 / 专家步骤行 / 两处拖拽条）。
-
 ## 路线图
 
-- 宏录制 / 回放（把 Repeater / Intruder / navigate 序列 + 变量注入固化为工具链宏）——手动主线下一项。
-- 项目视图（持久化容器：黑板 / Issue / 模板 / 会话，方案 001 / P6）。
-- 方案_v4 后续项：P4 重大结论升级为独立外部审计员、`call_expert` 同焦点去重。
+- 清理 Repeater / 矩阵 / 序列的展示层上限（500KB / 256KB / 64KB），统一完整结果与分片读取。
+- AI 测试计划一键应用到矩阵/序列；矩阵/序列单元格增加「AI 分析」入口。
+- 报告内嵌截图；备份包可选会话与截图。
+- 请求资产编辑/分组；端点清单与基线联动 diff。
+
+## 许可证
+
+本项目为**专有软件**，版权归 朝悦（GitHub [@gu437](https://github.com/gu437)）所有，保留所有权利。详见 [`LICENSE`](LICENSE)。
+第三方组件许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+
+## 安全
+
+漏洞请通过 GitHub Security Advisories 私下报告，不要公开 Issue。详见 [`SECURITY.md`](SECURITY.md)。
