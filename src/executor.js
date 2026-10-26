@@ -13,11 +13,12 @@ import {
 import { normalizeEndpoint } from "./llm.js";
 import {
   upsertFact, getFact, publishToBlackboard, appendWorkspaceEntry, updateWorkspaceEntry, getWorkspace,
-  getRoleSkills, saveConversation, saveShot, AI_PROJECT_ID, spillKey, recordSpillKey
+  getRoleSkills, saveConversation, saveShot, AI_PROJECT_ID, spillKey, recordSpillKey, ensureActiveProject
 } from "./memory.js";
 import { normalizeError, normalizeToolResult, F12X_ERROR_CODES } from "./errors.js";
 import { runReviewAudit, TOOL_NAMES_CN } from "./experts.js";
 import { taskState, pushStatus } from "./state.js";
+import { listAssets, getAsset, proposeTests } from "./ai_assets.js";
 // 循环引用注意：addAudit 为函数声明（模块实例化期即绑定），仅运行时调用，agent↔executor 环安全
 import { addAudit, sessionEvent } from "./agent.js";
 
@@ -57,6 +58,10 @@ registerTool(T({ name: "workspace_note", params: { required: ["content"], types:
 registerTool(T({ name: "call_expert", level: "g1", params: { required: ["focus"], types: { focus: "string", question: "string", data: "string" } } })); // 收敛版 A：call_expert=请求复核审计员
 registerTool(T({ name: "get_skill", level: "g1", params: { required: ["name"], types: { name: "string" } } }));
 // P2c（方案 §9.1 spill / V2）：读取溢出区全文（G1，手动/AI 均可用）
+registerTool(T({ name: "list_assets", level: "g1", params: { required: ["kind"], types: { kind: "string", limit: "number" }, enums: { kind: ["evidence", "identity", "request", "sequence", "baseline", "inventory"] } } }));
+registerTool(T({ name: "get_evidence", level: "g1", params: { required: ["id"], types: { id: "string" } } }));
+registerTool(T({ name: "get_asset", level: "g1", params: { required: ["kind"], types: { kind: "string", id: "string" }, enums: { kind: ["identity", "request", "sequence", "baseline", "inventory"] } } }));
+registerTool(T({ name: "propose_tests", level: "g1", params: { required: ["request"], types: { request: "object", goal: "string" } } }));
 registerTool(T({ name: "read_spilled", manualAllowed: true, level: "g1", params: { required: ["key"], types: { key: "string" } } }));
 
 // 轻量参数校验：required 缺失 / types 类型不符 / enums 越界 → INVALID_REQUEST
@@ -430,6 +435,25 @@ async function executeToolInner(name, args, signal = null) {
         if (!skill) return { error: `技能不存在: ${name}（查看系统提示中的【技能索引】列表）` };
         return { ok: true, name: skill.name, content: String(skill.content).substring(0, 8000) };
       }
+    case "list_assets": {
+      const pid = taskState.conv?.projectId || (await ensureActiveProject())?.id || "";
+      if (!pid) return { error: "未绑定项目：请先在项目页选择项目" };
+      return await listAssets(pid, args.kind, args.limit);
+    }
+    case "get_evidence": {
+      const pid = taskState.conv?.projectId || (await ensureActiveProject())?.id || "";
+      if (!pid) return { error: "未绑定项目：请先在项目页选择项目" };
+      return await getAsset(pid, "evidence", args.id);
+    }
+    case "get_asset": {
+      const pid = taskState.conv?.projectId || (await ensureActiveProject())?.id || "";
+      if (!pid) return { error: "未绑定项目：请先在项目页选择项目" };
+      return await getAsset(pid, args.kind, args.id);
+    }
+    case "propose_tests": {
+      const pid = taskState.conv?.projectId || (await ensureActiveProject())?.id || "";
+      return await proposeTests(pid, args.request || {}, args.goal || "");
+    }
     case "read_spilled":
       // P2c（方案 §9.1 / V2）：读取溢出区全文（模型/手动均可——G1）
       {

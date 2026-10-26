@@ -89,11 +89,11 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 
 ## 工具清单
 
-executor 注册 23 项，其中 17 项**手动可用**（manualAllowed，手动调用 = 用户即批准人：跳过批准，但保留校验 + 超时 + 审计）：
+executor 注册 27 项，其中 17 项**手动可用**（manualAllowed，手动调用 = 用户即批准人：跳过批准，但保留校验 + 超时 + 审计）：
 
 `get_page_skeleton` `search_dom` `get_network_requests` `get_network_request_detail` `get_cookies` `eval_js` `get_script_list` `get_script_content` `navigate` `get_console_logs` `replay_request` `highlight_element` `screenshot` `decode_text` `compare_responses` `intruder` `read_spilled`
 
-AI 任务专用（不可手动直调）：`upsert_fact` `get_fact` `rebuttal_check` `workspace_note` `call_expert` `get_skill`；另有引擎级 `plan_write`。
+AI 任务专用（不可手动直调）：`upsert_fact` `get_fact` `rebuttal_check` `workspace_note` `call_expert` `get_skill` `list_assets` `get_evidence` `get_asset` `propose_tests`；另有引擎级 `plan_write`。其中 `list_assets/get_evidence/get_asset/propose_tests` 为 G1 只读：AI 可读项目证据/身份/请求/序列/基线/端点原文（不脱敏），`propose_tests` 只生成计划、不发送请求。
 
 `eval_js` 支持 `executionWorld: main | isolated` 与 `allow_tools`（脚本内 `await __f12x_tools.<tool>(args)` 调扩展侧子工具，子工具白名单 12 项、桥接窗口 60s、`eval_js` 结束即关闭）。
 

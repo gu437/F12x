@@ -72,6 +72,8 @@ export const BOUNDARY_SECTION = `【行为边界（必须遵守）】
 - 需人工批准的操作：用户拒绝或 120s 未响应都以拒绝结束，这是人的决策、不是工具故障；不要原样重试，先说明取舍或改方案。
 - 截图只保存为引用 key，图片不进你的上下文；你无法"看见"截图内容。
 - 持久数据只存在于项目（黑板事实 / Issue / 模板 / 会话）；网络 / 控制台 / Repeater 输入是临时数据，不要声称把临时数据写入了项目。
+- 项目资产（证据 / 身份 / 请求 / 序列 / 基线）可用 list_assets / get_evidence / get_asset 读取原文（含原始认证凭据，不脱敏）；只能用于当前授权目标，不要外传，也不能修改/删除这些资产。
+- propose_tests 只生成测试计划，不发送请求；是否执行由用户决定。
 - 只基于真实工具结果下结论；没有调用过的操作不要声称做过。`;
 
 function capLabel(labels, n) {
@@ -111,7 +113,7 @@ export function buildCapabilityManifest({
   return lines.join("\n");
 }
 
-export function buildEnvSection({ project = null, mode = "task", profile = "", approvalLevel = "read_auto_write_approve" } = {}) {
+export function buildEnvSection({ project = null, mode = "task", profile = "", approvalLevel = "read_auto_write_approve", assets = null } = {}) {
   const approvalText = {
     read_auto_write_approve: "读自动 / 写需批准",
     full_auto: "全部自动",
@@ -129,6 +131,10 @@ export function buildEnvSection({ project = null, mode = "task", profile = "", a
     lines.push("- 机制档位：" + (profile === "lite" ? "精简档（工具精简、审查/专家关闭）" : "完整档"));
   }
   lines.push("- 批准级别：" + approvalText);
+  if (assets && assets.counts) {
+    const c = assets.counts;
+    lines.push("- 项目资产：证据 " + (c.evidence || 0) + " / 身份 " + (c.identity || 0) + " / 请求 " + (c.request || 0) + " / 序列 " + (c.sequence || 0) + " / 基线 " + (c.baseline || 0));
+  }
   return lines.join("\n");
 }
 
@@ -191,5 +197,9 @@ export const TOOL_DEFINITIONS = [
   { name: "get_skill", description: "读取已安装技能（skill）的完整内容。注意：若系统提示中未出现【技能索引】节，说明当前没有安装任何技能——此时不要调用本工具，直接用内置工具（get_page_skeleton / search_dom / eval_js / get_script_content 等）分析，禁止编造技能名。仅当【技能索引】里确实列有该名称时才调用本工具获取全文。", parameters: { type: "object", properties: { name: { type: "string", description: "技能名称（来自技能索引列表）" } }, required: ["name"] } },
 { name: "call_expert", description: "请求复核审计员对关键结论/疑点做独立只读复核。审计员用只读工具实测关键证据，返回是否成立(verified)、质疑点与建议下一步；不代替你行动。宣布漏洞/认证机制/最终报告等重大结论前或对判断存疑时调用。", parameters: { type: "object", properties: { focus: { type: "string", description: "要复核的结论或疑点（一句话说清，如：/api/user 返回 200 是否代表未授权接口）" }, question: { type: "string", description: "同 focus 的别名（二选一）" }, data: { type: "string", description: "可选的复核上下文（最近工具结果/关键证据，截断 8000 字符；留空则自动取最近工具结果）" } }, required: ["focus"] } },
   { name: "plan_write", description: "提交/整体修订本任务的执行流程（主代理自持，todo 语义——引擎不代你规划、不自动推进）。实测数据到位后、以及执行中按新证据修订流程时调用：steps 整表替换，每步含 desc（要做什么）与 criterion（可验证达成标准，写明哪个工具/哪类实测数据可证明完成，可留空）；status 可选 todo/doing/done（pending↔todo、in_progress↔doing、completed↔done 同义）。多步任务 3-6 步、首个步骤置 doing；确为单步/无需多步流程的简单任务传 steps:[] 明确声明。", parameters: { type: "object", properties: { reason: { type: "string", description: "修订原因（首次提交可省略；修订必须说明为何变化）" }, steps: { type: "array", items: { type: "object", properties: { desc: { type: "string", description: "步骤要做什么（一句话）" }, criterion: { type: "string", description: "可验证的达成标准（写明用哪个工具/哪类实测数据可证明完成；可留空）" }, status: { type: "string", enum: ["todo", "doing", "done"], description: "步骤状态（可选，默认 todo）" } }, required: ["desc"] } } }, required: ["steps"] } },
+  { name: "list_assets", description: "查看当前项目的资产索引：evidence（证据）/ identity（身份）/ request（保存的请求）/ sequence（序列）/ baseline（基线）/ inventory（端点清单）。只返回元数据，不含正文；详情用 get_evidence / get_asset。", parameters: { type: "object", properties: { kind: { type: "string", enum: ["evidence", "identity", "request", "sequence", "baseline", "inventory"], description: "资产类型" }, limit: { type: "integer", description: "返回条数上限，默认 50" } }, required: ["kind"] } },
+  { name: "get_evidence", description: "读取单条项目证据的完整原文：请求/响应头与体、差异、身份名、hash。不脱敏、不截断（超长由 spill/read_spilled 分片），包含原始 Cookie/Authorization。", parameters: { type: "object", properties: { id: { type: "string", description: "证据 id（来自 list_assets kind=evidence）" } }, required: ["id"] } },
+  { name: "get_asset", description: "读取项目资产完整正文（identity/request/sequence/baseline/inventory）。身份包含 Cookie/storage/认证头原文；请只用于当前授权测试。", parameters: { type: "object", properties: { kind: { type: "string", enum: ["identity", "request", "sequence", "baseline", "inventory"], description: "资产类型" }, id: { type: "string", description: "资产 id（inventory 可省略）" } }, required: ["kind"] } },
+  { name: "propose_tests", description: "根据一条请求与当前项目身份，生成结构化测试计划：IDOR/BFLA/CSRF/注入的对象引用、候选值、身份组合与判定标准。只生成计划，不发送请求、不建 Issue。", parameters: { type: "object", properties: { request: { type: "object", description: "请求 {method,url,headers,body}" }, goal: { type: "string", description: "本次测试目标（可选）" } }, required: ["request"] } },
   { name: "read_spilled", description: "读取溢出区全文。当工具返回含 spilled 标记（结果过大 >8k 字符已压缩为摘要）时，用本工具读取被压缩的完整结果（key 来自返回中的 spillKey/notice）。", parameters: { type: "object", properties: { key: { type: "string", description: "溢出数据 key（工具返回的 spilled 结果中给出）" } }, required: ["key"] } },
 ];

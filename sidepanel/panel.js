@@ -2421,6 +2421,7 @@ async function renderProjEvidence(p) {
       <div class="ev-card-meta">${esc(ev.method || "GET")} ${esc(ev.url || "")} · ${new Date(ev.createdAt || 0).toLocaleString()}${ev.identityName ? " · 身份 " + esc(ev.identityName) : ""}${(ev.tags || []).length ? " · " + esc((ev.tags || []).join(", ")) : ""}${(ev.issueIds || []).length ? " · 已关联 " + ev.issueIds.length + " 个 Issue" : ""}</div>
       <div class="ev-card-actions">
         <button class="mini-btn" data-ev-view="${esc(ev.id)}">查看</button>
+        <button class="mini-btn" data-ev-ai="${esc(ev.id)}">AI 分析</button>
         <button class="mini-btn" data-ev-curl="${esc(ev.id)}">复制 curl</button>
         <button class="mini-btn" data-ev-attach="${esc(ev.id)}">关联 Issue</button>
         <button class="mini-btn danger" data-ev-del="${esc(ev.id)}">删除</button>
@@ -2434,6 +2435,12 @@ async function renderProjEvidence(p) {
   const box = $("proj-evidence-list");
   if (!box) return;
   box.querySelectorAll("[data-ev-view]").forEach((b) => b.addEventListener("click", () => openEvidencePreview(b.dataset.evView)));
+  box.querySelectorAll("[data-ev-ai]").forEach((b) => b.addEventListener("click", async () => {
+    const rr = await api("evidence:get", { id: b.dataset.evAi });
+    if (!rr.ok) return toast("读取证据失败：" + (rr.error || ""));
+    const ev = rr.evidence;
+    await aiSendFromPage(`分析项目证据「${ev.title || ev.id}」（evidenceId=${ev.id}）。先用 get_evidence 读取完整原文，再判断它是否支持越权/认证/注入/敏感信息类漏洞，指出具体字段与还缺什么证据，并给出下一步测试；不要编造未执行过的操作。`, "证据分析：" + (ev.title || ev.id), true, p.id);
+  }));
   box.querySelectorAll("[data-ev-curl]").forEach((b) => b.addEventListener("click", async () => {
     const rr = await api("evidence:get", { id: b.dataset.evCurl });
     if (rr.ok) copyText(evidenceCurl(rr.evidence), "已复制 curl");

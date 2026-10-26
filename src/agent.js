@@ -40,6 +40,7 @@ import { runReviewAudit, TOOL_NAMES_CN } from "./experts.js";
 import { buildAnchorBlock, compactionWithSummary, isCheckpointMessage, sanitizeMessageSequence, pruneToolResults } from "./plan.js";
 import { assembleSections, TOOL_DEFINITIONS, buildCapabilityManifest, buildEnvSection } from "./prompts.js";
 import { dispatchTool } from "./executor.js";
+import { summarizeAssets } from "./ai_assets.js";
 import { taskState, appState, pushStatus, typewriterPush, abortPendingApproval } from "./state.js";
 import { normalizeError, isToolResultFailure } from "./errors.js";
 
@@ -67,7 +68,7 @@ export const LITE_CORE_TOOLS = new Set([
   "get_network_requests", "get_network_request_detail", "get_cookies",
   "get_script_list", "get_script_content", "get_console_logs",
   "replay_request", "screenshot", "decode_text", "compare_responses",
-  "upsert_fact", "get_fact", "workspace_note", "plan_write"
+  "upsert_fact", "get_fact", "workspace_note", "plan_write", "list_assets", "get_evidence", "propose_tests"
 ]);
 // 精简档工具面：核心子集 + 描述截短（本地小模型 prefill 提速；full/云端不受影响）
 export function toolDefsForMode(g, defs) {
@@ -86,7 +87,7 @@ const APPROVAL_G1 = new Set([
   "get_page_skeleton", "search_dom", "get_network_requests",
   "get_network_request_detail", "get_cookies", "get_script_list", "get_script_content",
   "get_console_logs", "screenshot", "highlight_element", "get_fact", "get_skill", "read_spilled",
-  "decode_text", "compare_responses", "call_expert", "rebuttal_check"
+  "decode_text", "compare_responses", "call_expert", "rebuttal_check", "list_assets", "get_evidence", "get_asset", "propose_tests"
 ]);
 const APPROVAL_G3 = new Set([]); // v1 无不可逆工具，预留扩展
 const APPROVAL_SNAP_KEY = "f12x_pending_approval_v1";
@@ -1270,7 +1271,8 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
   const pressureThreshold = Math.max(8192, Math.floor(ctxWindow * 0.8));
   const retainTail = Math.max(4096, Math.floor(ctxWindow * 0.16));
 
-  const anchor = buildAnchorBlock(session, facts, debuggeeUrl);
+  const assetSummary = await summarizeAssets(project ? project.id : "");
+  const anchor = buildAnchorBlock(session, facts, debuggeeUrl, assetSummary);
   const ws = await getWorkspace(session.convId);
   const wsSummary = buildWorkspaceSummary(ws);
   const guardProfile = await resolveGuardProfile(config.baseUrl);
@@ -1282,7 +1284,7 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
     g1: APPROVAL_G1, labels: TOOL_NAMES_CN, approvalLevel,
     mode: "task", lite: !!guardProfile.liteTools,
   });
-  const envNote = buildEnvSection({ project, mode: "task", profile: guardProfile.mode, approvalLevel });
+  const envNote = buildEnvSection({ project, mode: "task", profile: guardProfile.mode, approvalLevel, assets: assetSummary });
   const systemContentBase = await assembleSections({
     anchor, wsSummary, capability, env: envNote,
     skillsIndex: (await buildSkillsIndex("main_model")).replace(/^\n+/, ""),

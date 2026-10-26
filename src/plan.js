@@ -337,7 +337,7 @@ export async function compactionWithSummary(messages, opts = {}) {
 }
 
 // --- 锚点块（第 1/3 层注入，每次调用动态拼进 system） ---
-export function buildAnchorBlock(session, facts, tabUrl) {
+export function buildAnchorBlock(session, facts, tabUrl, assets = null) {
   const parts = [];
   if (session?.goal) parts.push(`【任务目标】${session.goal}`);
   if (session?.plan?.length) {
@@ -357,6 +357,19 @@ export function buildAnchorBlock(session, facts, tabUrl) {
     const idx = picked.map(f => `- [${f.key}] ${f.summary} (${f.confidence})`).join("\n");
     const omitted = facts.length > picked.length ? `\n（另有 ${facts.length - picked.length} 条，用 get_fact 查询）` : "";
     parts.push(`【黑板索引】（发现共享，跨任务可用）\n${idx}${omitted}\n需要详情请调用 get_fact(key)；新发现请调用 upsert_fact(key, category, summary, body)——禁止凭摘要臆造细节。`);
+  }
+  if (assets && assets.counts && (assets.counts.evidence || assets.counts.identity || assets.counts.request || assets.counts.sequence || assets.counts.baseline)) {
+    const c = assets.counts;
+    parts.push("【项目资产】证据 " + (c.evidence || 0) + " / 身份 " + (c.identity || 0) + " / 请求 " + (c.request || 0) + " / 序列 " + (c.sequence || 0) + " / 基线 " + (c.baseline || 0) + "。索引用 list_assets(kind)，正文用 get_evidence(id) / get_asset(kind,id)。");
+  }
+  if (assets && assets.evidence && assets.evidence.length) {
+    const idx = assets.evidence.map(function (e) {
+      return "- [" + e.id + "] " + (e.method || "GET") + " " + (e.url || "") + "（" + (e.status == null ? "-" : e.status) + "）" + (e.title || "") + (e.identityName ? " · " + e.identityName : "");
+    }).join("\n");
+    parts.push("【证据索引】（最近 " + assets.evidence.length + " 条，完整原文用 get_evidence(id)）\n" + idx);
+  }
+  if (assets && assets.identities && assets.identities.length) {
+    parts.push("【身份索引】" + assets.identities.map(function (i) { return i.name + "（Cookie " + i.cookieCount + "）"; }).join(" · "));
   }
   if (tabUrl) parts.push(`【当前页面】${tabUrl}`);
   return parts.join("\n\n");

@@ -14,7 +14,7 @@ export const TOOL_NAMES_CN = {
   decode_text: "编解码", compare_responses: "响应对比", intruder: "变体请求",
   upsert_fact: "记录黑板事实",
   get_fact: "读取黑板事实", rebuttal_check: "重大结论自检", workspace_note: "工作区记录",
-  get_skill: "读取技能", call_expert: "请求复核", replan: "重新规划", plan_write: "提交/更新执行流程", read_spilled: "读取溢出区全文"
+  get_skill: "读取技能", call_expert: "请求复核", replan: "重新规划", plan_write: "提交/更新执行流程", read_spilled: "读取溢出区全文", list_assets: "查看项目资产", get_evidence: "读取证据原文", get_asset: "读取资产原文", propose_tests: "生成测试计划"
 };
 
 // 复核审计员的角色提示（唯一角色：独立复核，不越权行动）
