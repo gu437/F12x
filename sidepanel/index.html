@@ -15,10 +15,6 @@
     <!-- ========== 头部 ========== -->
     <header id="header">
       <h1 class="logo">F12x</h1>
-      <select id="site-selector" class="site-selector" title="当前站点工作区">
-        <option value="">站点工作区：无</option>
-      </select>
-      <button id="site-create-quick" class="icon-btn hidden" title="新建站点工作区（站点数据按站点隔离：笔记/模板等归属当前站点）"><span data-icon="plus" data-size="14"></span></button>
       <span class="spacer"></span>
       <span id="llm-badge" class="llm-badge hidden" title="AI 已配置">AI</span>
       <span id="status" class="status-dot" data-tip="调试器连接状态" title="调试器连接状态"></span>
@@ -37,7 +33,6 @@
         <button class="nav-item" data-view="request" title="请求"><span data-icon="arrow-right" data-size="18"></span><span class="nav-label">请求</span></button>
         <button class="nav-item" data-view="cookie" title="Cookie"><span data-icon="cookie" data-size="18"></span><span class="nav-label">Cookie</span></button>
         <button class="nav-item" data-view="script" title="脚本"><span data-icon="code" data-size="18"></span><span class="nav-label">脚本</span></button>
-        <button class="nav-item" data-view="site" title="站点"><span data-icon="globe" data-size="18"></span><span class="nav-label">站点</span></button>
         <button class="nav-item" data-view="ai" title="AI 会话"><span data-icon="sparkles" data-size="18"></span><span class="nav-label">AI</span></button>
       </nav>
 
@@ -168,7 +163,7 @@
             <pre id="rep-result" class="result-box"></pre>
             <details id="rep-history-block">
               <summary><span data-icon="history" data-size="12"></span> 历史
-                <button id="rep-save-site" class="mini-btn" title="把最近 Repeater 历史另存到当前站点工作区">存到站点</button>
+                <button id="rep-save-site" class="mini-btn" title="把最近 Repeater 历史写入项目黑板">存到黑板</button>
               </summary>
               <div id="rep-history" class="rep-history"></div>
             </details>
@@ -264,25 +259,6 @@
         </section>
 
         <!-- ===== 站点模块 ===== -->
-        <section id="view-site" class="view">
-          <div class="toolbar wrap">
-            <input id="site-name-input" class="text-input flex" placeholder="新建站点名称…" />
-            <button id="site-create-btn" class="ctrl-btn primary"><span data-icon="plus" data-size="12"></span> 创建</button>
-          </div>
-          <div id="site-list" class="site-list"></div>
-          <div id="site-detail" class="site-detail hidden">
-            <div class="tabs">
-              <button class="tab active" data-tab="facts">黑板</button>
-              <button class="tab" data-tab="templates">模板</button>
-              <button class="tab" data-tab="sessions">会话</button>
-            </div>
-            <div id="site-facts" class="site-pane active"></div>
-            <div id="site-templates" class="site-pane"></div>
-            <div id="site-sessions" class="site-pane"></div>
-          </div>
-        </section>
-
-        <!-- ===== AI 模块（会话列表 ↔ 聊天工作台：气泡对话 + 实时执行流 + 只读记录） ===== -->
         <section id="view-ai" class="view">
           <!-- 列表态工具条 -->
           <div id="ai-list-bar" class="toolbar wrap">

@@ -98,11 +98,6 @@ body {
   padding: 2px 10px 4px; border-radius: 6px; box-shadow: 2px 2px 0 var(--surface-5);
   user-select: none; white-space: nowrap;
 }
-.site-selector {
-  background: var(--surface-1); border: 1px solid var(--surface-4); color: var(--text-1);
-  border-radius: var(--radius-xs); padding: 3px 6px; font-size: 12px;
-  max-width: 150px; outline: none;
-}
 .llm-badge {
   font-size: 10px; font-weight: 700; color: #fff; background: #000;
   border-radius: 4px; padding: 2px 5px; letter-spacing: 1px;
@@ -290,19 +285,6 @@ body.resizing-h { cursor: ew-resize !important; user-select: none; }
 .cl.error b, .cl.exception b { color: #f56c6c; }
 
 /* ---------- 站点 ---------- */
-.site-sessions-hint { font-size:11px; color:var(--text-3); padding:2px 2px 6px; }
-.site-list { padding: 4px 8px; display: flex; flex-direction: column; gap: 4px; }
-.site-item {
-  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
-  background: var(--surface-2); border: 1px solid var(--surface-4); border-radius: var(--radius-xs);
-  cursor: pointer; font-size: 12px;
-}
-.site-item:hover { border-color: var(--text-2); }
-.site-item.active { border-color: #000; box-shadow: inset 2px 0 0 #000; }
-.site-item .si-name { font-weight: 600; }
-.site-item .si-meta { color: var(--text-4); font-size: 10px; }
-.site-item .si-actions { margin-left: auto; display: flex; gap: 4px; }
-.site-detail { border-top: 1px solid var(--surface-4); flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .site-pane { display: none; flex: 1; overflow-y: auto; padding: 8px; }
 .site-pane.active { display: block; }
 .fact-item { border: 1px solid var(--surface-4); border-radius: var(--radius-xs); padding: 6px 8px; margin-bottom: 6px; }

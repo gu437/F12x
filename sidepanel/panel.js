@@ -163,7 +163,7 @@ function initIssueModule() {
 
 // --- 视图层状态 ---
 const app = {
-  state: { attached: false, llmConfigured: false, activeSiteId: null, version: "" },
+  state: { attached: false, llmConfigured: false, version: "" },
   intercept: { mode: "off", queue: [] },
   network: {
     items: [], selectedId: null, detail: null, detailTab: "reqh",
@@ -176,8 +176,6 @@ const app = {
   rep: { lastResponse: null, history: [], prevBody: "" },
   jsHistory: [],
   currentView: "page",
-  activeSite: null,
-  sites: [],
   aiRunning: false,
   inspectOn: false,
   audit: [] // AI 动作审计日志（方案 3.2⑤ 一切动作留痕，状态条可展开）
@@ -228,7 +226,6 @@ function switchView(view) {
   if (view === "network" && !app.network.items.length) loadNetworkList();
   if (view === "cookie") loadCookies();
   if (view === "script") loadScriptList();
-  if (view === "site") loadSites();
   if (view === "ai") renderAISessions();
 }
 
@@ -253,32 +250,9 @@ async function refreshState() {
     renderInterceptMode();
   }
   renderInterceptBanner();
-  await refreshSiteSelector(r.state.activeSiteId);
 }
 
-async function refreshSiteSelector(activeId) {
-  const r = await api("site:list");
-  if (!r.ok) return;
-  app.sites = r.sites;
-  const sel = $("site-selector");
-  const prev = sel.value;
-  sel.innerHTML = '<option value="">站点工作区：无</option>' + r.sites.map(s =>
-    `<option value="${s.id}">${esc(s.name)}</option>`).join("");
-  const target = activeId != null ? activeId : (prev && r.sites.some(s => s.id === prev) ? prev : "");
-  sel.value = target;
-  // 无站点时在顶栏显示"+"快捷新建入口（站点是手动按需创建的）
-  const quick = $("site-create-quick");
-  if (quick) quick.classList.toggle("hidden", r.sites.length > 0);
-  if (target && target !== app.state.activeSiteId) {
-    app.state.activeSiteId = target;
-    await api("site:set_active", { siteId: target });
-    await loadActiveSiteDetail(target);
-  }
-  loadSites();
-}
 
-// ============================================================
-// 通用弹层
 // ============================================================
 function openModal(html) {
   const root = $("modal-root");
@@ -952,26 +926,21 @@ async function sendToAI(item) {
 }
 
 async function markAsFinding(item) {
-  if (!app.state.activeSiteId) {
-    openModal(`<h3>标记为发现</h3><p>请先选择站点工作区（顶部站点选择器）</p><div class="modal-actions"><button>关闭</button></div>`);
-    document.querySelector(".modal-box .modal-actions button").addEventListener("click", closeModal);
-    return;
-  }
   let host = "";
   try { host = new URL(item.url).hostname; } catch (e) {}
-  openModal(`<h3>标记为发现</h3>
+  const pid = (aiDetailConv && aiDetailConv.projectId) || "";
+  openModal(`<h3>存到项目黑板</h3>
     <label>备注（可选）</label><input id="fact-remark" placeholder="发现的接口/敏感信息…"/>
-    <p class="issue-sub" style="margin:6px 0">将写入当前站点“${esc(app.state.activeSiteName || "")}”的黑板事实（顶部站点选择器可切换站点；Key 自动生成，无需手动填）</p>
-    <div class="modal-actions"><button>取消</button><button id="fact-ok" class="primary">写入笔记</button></div>`);
+    <p class="issue-sub" style="margin:6px 0">写入当前项目黑板（未绑定项目时写 AI 全局黑板；Key 自动生成，无需手动填）</p>
+    <div class="modal-actions"><button>取消</button><button id="fact-ok" class="primary">写入</button></div>`);
   const box = document.querySelector(".modal-box");
   box.querySelector(".modal-actions button").addEventListener("click", closeModal);
   box.querySelector("#fact-ok").addEventListener("click", async () => {
     const remark = $("fact-remark").value || item.url;
-    const key = "endpoint|" + host + "|" + Date.now().toString(36); // 自动唯一键：同 URL 每次新笔记不互相覆盖
-    const r = await api("site:fact_add", { siteId: app.state.activeSiteId, key, value: `[${item.method}] ${item.url} — ${remark}` });
+    const key = "endpoint|" + host + "|" + Date.now().toString(36);
+    const r = await api("project:fact_add", { projectId: pid, key, category: "endpoint", value: `[${item.method}] ${item.url} — ${remark}` });
     closeModal();
-    toast(r.ok ? "已写入笔记（当前站点黑板）" : "写入失败：" + r.error);
-    loadSites();
+    toast(r.ok ? "已写入项目黑板" : "写入失败：" + r.error);
   });
 }
 
@@ -1070,13 +1039,13 @@ function initRequestModule() {
 
   // Repeater
   $("rep-send").addEventListener("click", repSend);
-  // Repeater 历史另存到当前站点工作区（14.7②：站点工作区可另存）
+  // Repeater 历史存到项目黑板
   $("rep-save-site").addEventListener("click", async () => {
-    if (!app.activeSite) return toast("未选择站点（站点模块选一个站点后保存）");
     if (!app.rep.history.length) return toast("暂无 Repeater 历史可保存");
     const snap = app.rep.history.slice(-15).map(h => `[${h.method}] ${h.status ?? "-"} ${h.url}`).join("\n");
-    const r = await api("site:fact_add", { siteId: app.activeSite.id, key: "repeater-history", value: snap, tags: ["repeater"] });
-    if (r.ok) { toast(`已保存到站点「${app.activeSite.name}」`); renderSiteFacts(); }
+    const pid = (aiDetailConv && aiDetailConv.projectId) || "";
+    const r = await api("project:fact_add", { projectId: pid, key: "repeater-history", category: "repeater", value: snap });
+    if (r.ok) toast("已保存到项目黑板");
     else toast("保存失败：" + (r.error || ""));
   });
   // 内嵌"对比上次响应"（方案 3.1 Repeater）
@@ -1401,58 +1370,6 @@ async function loadScriptContent(url) {
     const frag = sel || lines.slice(0, 60).join("\n");
     const resp = await api("ai:chat", { text: `分析以下代码片段（来源 ${url}），关注安全缺陷（XSS/SQLi/注入/敏感信息泄漏）：\n${frag.substring(0, 4000)}` });
     toast(resp.ok ? "AI 分析已输出到状态条" : "失败：" + (resp.error || ""));
-  });
-}
-
-// ============================================================
-// ===== 站点模块 =====
-// ============================================================
-function initSiteModule() {
-  $("site-create-btn").addEventListener("click", async () => {
-    const name = $("site-name-input").value.trim();
-    if (!name) return toast("站点名称必填");
-    const r = await api("site:create", { name, scope: [] });
-    if (!r.ok) return toast("创建失败：" + r.error);
-    $("site-name-input").value = "";
-    await api("site:set_active", { siteId: r.site.id });
-    await refreshSiteSelector(r.site.id);
-    await loadActiveSiteDetail(r.site.id);
-    toast("站点已创建并激活");
-  });
-  // 站点详情 tab 切换（笔记/模板）
-  document.querySelectorAll("#view-site .tabs .tab").forEach(t => t.addEventListener("click", () => {
-    document.querySelectorAll("#view-site .tabs .tab").forEach(x => x.classList.toggle("active", x === t));
-    document.querySelectorAll("#view-site .site-pane").forEach(p => p.classList.toggle("active", p.id === "site-" + t.dataset.tab));
-  }));
-  // 顶栏"+"快捷新建站点工作区（无站点时显示）：预填当前调试页域名，创建即激活
-  $("site-create-quick").addEventListener("click", () => {
-    let host = "", scopeHint = "";
-    try {
-      if (app.state.debuggeeUrl) {
-        const u = new URL(app.state.debuggeeUrl);
-        host = u.host;
-        scopeHint = u.host;
-      }
-    } catch (e) {}
-    openModal(`<h3>新建站点工作区</h3>
-      <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">站点 = 一组按域名隔离的用户数据（笔记黑板 / 任务模板），用于把调试成果归属到对应目标。${host ? `检测到当前调试页：<b>${esc(host)}</b>` : ""}</div>
-      <label>名称</label><input id="qs-name" placeholder="如：后台管理系统" value="${esc(host)}" />
-      <label>范围（每行一个域名，可留空）</label><textarea id="qs-scope" rows="3" class="code-input">${esc(scopeHint)}</textarea>
-      <div class="modal-actions"><button>取消</button><button id="qs-ok" class="primary">创建</button></div>`);
-    const box = document.querySelector(".modal-box");
-    box.querySelector(".modal-actions button").addEventListener("click", closeModal);
-    box.querySelector("#qs-ok").addEventListener("click", async () => {
-      const name = $("qs-name").value.trim();
-      if (!name) return;
-      const scope = $("qs-scope").value.split("\n").map(s => s.trim()).filter(Boolean);
-      closeModal();
-      const r = await api("site:create", { name, scope: scope.length ? scope : null });
-      if (!r.ok) return toast("创建失败：" + r.error);
-      await api("site:set_active", { siteId: r.site.id });
-      await refreshSiteSelector(r.site.id);
-      await loadActiveSiteDetail(r.site.id);
-      toast("站点工作区已创建并激活：" + r.site.name);
-    });
   });
 }
 
@@ -2790,226 +2707,7 @@ function chatOnStatus(st) {
   }
 }
 
-async function loadSites() {
-  const r = await api("site:list");
-  if (!r.ok) return;
-  app.sites = r.sites;
-  if (app.activeSite && !r.sites.some(s => s.id === app.activeSite.id)) app.activeSite = null;
-  const list = $("site-list");
-  list.innerHTML = r.sites.map(s => `
-    <div class="site-item ${app.activeSite?.id === s.id ? "active" : ""}" data-id="${s.id}">
-      <span class="si-name">${esc(s.name)}</span>
-      <span class="si-meta">${(s.scope || []).join(",") || "无范围"} · ${s.factsCount} 事实 · ${s.templatesCount} 模板</span>
-      <span class="si-actions">
-        <button class="mini-btn" data-act="rename">重命名</button>
-        <button class="mini-btn" data-act="del">删除</button>
-      </span>
-    </div>`).join("") || '<div class="placeholder">暂无站点，输入名称创建</div>';
-  list.querySelectorAll(".site-item").forEach(el => el.addEventListener("click", async (e) => {
-    const id = el.dataset.id;
-    if (e.target.closest('[data-act="del"]')) {
-      const r = await api("site:delete", { siteId: id });
-      if (r.ok) { await refreshSiteSelector(app.state.activeSiteId); toast("已删除"); }
-      return;
-    }
-    if (e.target.closest('[data-act="rename"]')) {
-      const site = app.sites.find(s => s.id === id);
-      if (!site) return;
-      openModal(`<h3>重命名站点</h3>
-        <label>名称</label><input id="r-name" value="${esc(site.name)}" />
-        <label>范围（每行一个域名）</label><textarea id="r-scope" rows="3" class="code-input">${(site.scope || []).join("\n")}</textarea>
-        <div class="modal-actions"><button>取消</button><button id="r-ok" class="primary">保存</button></div>`);
-      const box = document.querySelector(".modal-box");
-      box.querySelector(".modal-actions button").addEventListener("click", closeModal);
-      box.querySelector("#r-ok").addEventListener("click", async () => {
-        await api("site:rename", { siteId: id, name: $("r-name").value, scope: $("r-scope").value.split("\n").map(s => s.trim()).filter(Boolean) });
-        closeModal(); await refreshSiteSelector(app.state.activeSiteId);
-      });
-      return;
-    }
-    if (app.activeSite?.id !== id) {
-      const r = await api("site:set_active", { siteId: id });
-      if (r.ok) {
-        app.state.activeSiteId = id;
-        $("site-selector").value = id;
-        await loadActiveSiteDetail(id);
-      }
-    }
-  }));
-  if (app.state.activeSiteId && app.activeSite?.id !== app.state.activeSiteId) {
-    await loadActiveSiteDetail(app.state.activeSiteId);
-  }
-}
 
-async function loadActiveSiteDetail(id) {
-  const r = await api("site:get", { siteId: id });
-  if (!r.ok || !r.site) { $("site-detail").classList.add("hidden"); return; }
-  app.activeSite = r.site;
-  app.state.activeSiteId = id;
-  $("site-detail").classList.remove("hidden");
-  renderSiteFacts();
-  renderSiteTemplates();
-  renderSiteSessions().catch(() => {});
-  $("site-selector").value = id;
-}
-
-function renderSiteFacts() {
-  const pane = $("site-facts");
-  const facts = app.activeSite?.facts || [];
-  pane.innerHTML = `
-    <div class="toolbar" style="padding-left:0">
-      <input id="fact-new-key" class="text-input flex" placeholder="key（如 endpoint|/api/login）" />
-      <input id="fact-new-val" class="text-input flex" placeholder="value（发现内容）" />
-      <button id="fact-add" class="ctrl-btn primary">添加</button>
-    </div>
-    ${facts.slice().reverse().map(f => `
-      <div class="fact-item">
-        <div class="fi-head">
-          <span class="fi-key">${esc(f.key)}</span>
-          <span class="fi-src ${f.source === "ai" ? "ai" : ""}">${esc(f.source || "user")}</span>
-          <button class="mini-btn" style="margin-left:auto" data-del="${f.id}">删除</button>
-        </div>
-        <div class="fi-val">${esc(f.value || "")}</div>
-      </div>`).join("") || '<div class="placeholder">笔记为空 — 网络请求"标记为发现"或手动添加</div>'}`;
-  pane.querySelectorAll('[data-del]').forEach(b => b.addEventListener("click", async () => {
-    await api("site:fact_remove", { siteId: app.activeSite.id, factId: b.dataset.del });
-    await loadActiveSiteDetail(app.activeSite.id);
-  }));
-  pane.querySelector("#fact-add")?.addEventListener("click", async () => {
-    const key = pane.querySelector("#fact-new-key").value.trim();
-    const value = pane.querySelector("#fact-new-val").value.trim();
-    if (!key || !value) return;
-    await api("site:fact_add", { siteId: app.activeSite.id, key, value });
-    await loadActiveSiteDetail(app.activeSite.id);
-  });
-}
-
-const TEMPLATE_KINDS = { dir_scan: "目录扫描", api_enum: "接口枚举", inject_verify: "注入验证", param_fuzz: "参数 Fuzz", custom: "自定义" };
-function renderSiteTemplates() {
-  const pane = $("site-templates");
-  const templates = app.activeSite?.templates || [];
-  pane.innerHTML = `
-    <div class="toolbar" style="padding-left:0">
-      <button id="tpl-add" class="ctrl-btn primary">+ 新建模板</button>
-    </div>
-    ${templates.map(t => `
-      <div class="template-item">
-        <div class="ti-name">${esc(t.name)} <span class="ti-kind">${esc(TEMPLATE_KINDS[t.kind] || t.kind)}</span></div>
-        <div style="font-size:11px;color:var(--text-3);margin-top:2px">${esc(t.desc || "")}</div>
-        <div style="font-size:11px;color:var(--text-4);font-family:var(--mono);margin-top:2px">${esc(JSON.stringify(t.params || {}))}</div>
-        <button class="mini-btn" style="margin-top:4px" data-run="${t.id}">运行</button>
-        <button class="mini-btn" style="margin-top:4px" data-del="${t.id}">删除</button>
-      </div>`).join("") || '<div class="placeholder">无任务模板</div>'}`;
-  pane.querySelectorAll('[data-del]').forEach(b => b.addEventListener("click", async () => {
-    await api("site:template_delete", { siteId: app.activeSite.id, templateId: b.dataset.del });
-    await loadActiveSiteDetail(app.activeSite.id);
-  }));
-  // 运行模板 → 完整 AI 任务引擎（3.3：AI 不规划目标范围，只规划执行路径；批准/审计/接管闭环自动生效）
-  pane.querySelectorAll('[data-run]').forEach(b => b.addEventListener("click", async () => {
-    const t = templates.find(x => x.id === b.dataset.run);
-    if (!t) return;
-    const kindCN = TEMPLATE_KINDS[t.kind] || t.kind;
-    const url = t.params?.url || app.state.debuggeeUrl || "";
-    const text = `【任务模板·${kindCN}】目标：${url}。${t.instructions ? "执行说明：" + t.instructions + "。" : ""}请按该模板执行自动化任务（执行路径由你规划：payload 顺序/判定逻辑/失败重试），完成后汇报结果。`;
-    toast("已下达任务模板「" + t.name + "」，进度见底部 AI 状态条");
-    await api("ai:task", { text });
-  }));
-  pane.querySelector("#tpl-add")?.addEventListener("click", () => {
-    openModal(`<h3>新建任务模板</h3>
-      <label>名称</label><input id="t-name" placeholder="如：后台目录扫描" />
-      <label>类型</label>
-      <select id="t-kind">
-        <option value="dir_scan">目录扫描</option>
-        <option value="api_enum">接口枚举</option>
-        <option value="inject_verify">注入验证</option>
-        <option value="param_fuzz">参数 Fuzz</option>
-        <option value="custom">自定义</option>
-      </select>
-      <label>目标 URL（可用 {payload} 占位）</label><input id="t-url" placeholder="https://target.com/{payload}" />
-      <label>说明</label><textarea id="t-desc" rows="2" class="code-input" placeholder="给 AI 的执行说明…"></textarea>
-      <div class="modal-actions"><button>取消</button><button id="t-ok" class="primary">保存</button></div>`);
-    const box = document.querySelector(".modal-box");
-    box.querySelector(".modal-actions button").addEventListener("click", closeModal);
-    box.querySelector("#t-ok").addEventListener("click", async () => {
-      const r = await api("site:template_add", {
-        siteId: app.activeSite.id,
-        template: {
-          name: $("t-name").value, kind: $("t-kind").value,
-          params: { url: $("t-url").value || app.state.debuggeeUrl || "", payload: "" },
-          instructions: $("t-desc").value
-        }
-      });
-      closeModal();
-      toast(r.ok ? "模板已保存" : "保存失败：" + r.error);
-      await loadActiveSiteDetail(app.activeSite.id);
-    });
-  });
-}
-
-// 站点「会话」页签：按 scope 域名匹配相关 AI 会话。
-// ① 先用列表自带的标题/目标做廉价匹配；② 未命中的再读详情里的消息正文（最多 40 个，避免全量拉取）。
-async function renderSiteSessions() {
-  const pane = $("site-sessions");
-  const site = app.activeSite;
-  if (!pane) return;
-  if (!site) { pane.innerHTML = '<div class="placeholder">未选择站点</div>'; return; }
-  const hosts = (site.scope || []).map(s => {
-    const v = String(s || "").trim().replace(/^https?:\/\//i, "");
-    return v.split("/")[0].split(":")[0].toLowerCase();
-  }).filter(Boolean);
-  if (!hosts.length) {
-    pane.innerHTML = '<div class="placeholder">该站点未设置 scope 域名——在站点「重命名」里补上域名后，才能匹配相关会话</div>';
-    return;
-  }
-  pane.innerHTML = '<div class="placeholder">正在匹配相关会话…</div>';
-  const lr = await api("ai:conversations");
-  if (!lr.ok) { pane.innerHTML = `<div class="placeholder">会话列表读取失败：${esc(lr.error)}</div>`; return; }
-  const convs = (lr.conversations || []).slice(0, 120);
-  const hits = [];
-  const seen = new Set();
-  const matchOf = (text) => { const low = String(text || "").toLowerCase(); return hosts.find(h => low.includes(h)) || ""; };
-  for (const c of convs) {
-    const hit = matchOf((c.title || "") + "\n" + (c.goal || ""));
-    if (hit) { hits.push({ c, host: hit }); seen.add(c.convId); }
-  }
-  let deep = 0;
-  for (const c of convs) {
-    if (seen.has(c.convId)) continue;
-    if (deep >= 30) break;
-    if (!app.activeSite || app.activeSite.id !== site.id) return; // 站点已切换：放弃本次匹配
-    deep++;
-    try {
-      const d = await api("ai:conversation_detail", { convId: c.convId });
-      if (!d.ok || !d.conversation) continue;
-      const hit = matchOf((d.conversation.messages || []).map(m => String(m.content || "")).join("\n"));
-      if (hit) hits.push({ c, host: hit });
-    } catch (e) { /* 单个会话读取失败不影响列表 */ }
-  }
-  if (!hits.length) {
-    pane.innerHTML = `<div class="placeholder">没有会话提到该站点域名（${esc(hosts.join(" / "))}）——跑一次针对该站点的 AI 任务后会自动出现在这里</div>`;
-    return;
-  }
-  hits.sort((a, b) => (b.c.updatedAt || 0) - (a.c.updatedAt || 0));
-  pane.innerHTML = `<div class="site-sessions-hint">按 scope 域名匹配（${esc(hosts.join(" / "))}）：命中 ${hits.length} 个会话</div>`
-    + hits.map(({ c, host }) => `
-      <div class="conv-item" data-id="${esc(c.convId)}">
-        <div class="ci-head">
-          <span class="ci-title">${esc(c.title || "未命名会话")}</span>
-          <span class="ci-type ${c.type === "task" ? "task" : ""}">${c.type === "task" ? "任务" : "聊天"}</span>
-          <span class="ci-time">${new Date(c.updatedAt || 0).toLocaleString()}</span>
-        </div>
-        <div class="ci-meta">命中 ${esc(host)} · 消息 ${c.msgCount || 0} · 审计 ${c.auditCount ?? (c.audit || []).length}</div>
-      </div>`).join("");
-  pane.querySelectorAll(".conv-item").forEach(el => el.addEventListener("click", () => {
-    const hit = hits.find(x => String(x.c.convId) === el.dataset.id);
-    if (!hit) return;
-    switchView("ai");
-    openAIDetail(hit.c); // 列表项字段足够（convId / title / type / projectId / msgCount / updatedAt）
-  }));
-}
-
-// ============================================================
-// ===== 设置 =====
 // ============================================================
 function initSettings() {
   $("settings-toggle").addEventListener("click", openSettings);
@@ -4285,11 +3983,6 @@ function handleStream(event, data) {
       setStatusDot(false);
       toast("调试器已分离");
       break;
-    case "site:active":
-      app.state.activeSiteId = data.siteId;
-      if (data.siteId) loadActiveSiteDetail(data.siteId);
-      else { $("site-detail").classList.add("hidden"); app.activeSite = null; }
-      break;
     default:
       break;
   }
@@ -4394,7 +4087,6 @@ function init() {
   safeInit("request", initRequestModule);
   safeInit("cookie", initCookieModule);
   safeInit("script", initScriptModule);
-  safeInit("site", initSiteModule);
   safeInit("ai", initAIModule);
   safeInit("pn", pnInit);
   safeInit("settings", initSettings);
@@ -4438,12 +4130,6 @@ function init() {
       else toast("AI 空闲，无需暂停");
     }
     else if (key === "x") { e.preventDefault(); setInterceptMode(app.intercept.mode === "off" ? "all" : "off"); }
-  });
-  // 站点选择器变化
-  $("site-selector").addEventListener("change", async () => {
-    const id = $("site-selector").value;
-    const r = await api("site:set_active", { siteId: id || null });
-    if (r.ok) { app.state.activeSiteId = id || null; if (id) await loadActiveSiteDetail(id); else { $("site-detail").classList.add("hidden"); app.activeSite = null; } }
   });
   connectStream();
   refreshState();

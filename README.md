@@ -27,10 +27,9 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 | --- | --- |
 | 页面 | Inspect 点选生成选择器卡、采集页面骨架（超预算自动截断）、表单枚举、视口 / 整页截图、URL 导航、CSS 选择器搜索 DOM、JS 执行台（支持顶层 await + 历史） |
 | 网络 | 实时请求表（缓冲 2000 条）、过滤（URL 正则、元数据搜索、方法 / 状态 / 域 / 类型）、列配置（持久化）、分页（50/页）、请求详情（请求头 / 请求体 / 响应头 / 响应体 / 控制台——控制台页签展示**全局最近 60 条**日志，不按请求过滤） |
-| 请求 | **Repeater**：自定义方法 / URL / 头 / 体发送、与上次响应对比、→ Comparer / Decoder、历史（可"存到站点"）；**Intruder**：`{payload}` 占位注入 URL / 请求体 / 请求头（注入头字段）、自定义静态请求头、payload 文本或文件导入、并发 / 限速 / 停止（真中断）、摘要与逐条结果；**Comparer**：A/B 文本对比、一键交换；**Decoder**：Base64 / URL / Hex 编解码，输出"→ 再编码"链式转换 |
+| 请求 | **Repeater**：自定义方法 / URL / 头 / 体发送、与上次响应对比、→ Comparer / Decoder、历史（可"存到黑板"）；**Intruder**：`{payload}` 占位注入 URL / 请求体 / 请求头（注入头字段）、自定义静态请求头、payload 文本或文件导入、并发 / 限速 / 停止（真中断）、摘要与逐条结果；**Comparer**：A/B 文本对比、一键交换；**Decoder**：Base64 / URL / Hex 编解码，输出"→ 再编码"链式转换 |
 | Cookie | 域名 / 名称过滤、显示值开关、刷新；值默认掩码、点击切换完整值；可编辑 / 删除（CDP 写回，失败如实报错） |
 | 脚本 | 页面脚本列表、grep 关键字高亮（默认 20 处）、源码行号查看 |
-| 站点 | 手工维护的站点工作区：创建 / 重命名 / 删除、scope（域名列表）、**黑板**（该站点事实卡，可手填或"标记为发现"写入；Repeater 的「存到站点」也是写入一条 `repeater-history` 事实）、**模板**（新建后点「运行」直接下发一条 AI 任务，附执行说明）、**会话**（按 scope 域名匹配提到该站点的 AI 会话，点条目直接打开） |
 | AI | 见下节 |
 
 ### 网络拦截（抓包改包）
@@ -42,7 +41,7 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 
 ### 请求行的上下文操作
 
-发送到 Repeater / Intruder / Decoder / Comparer / AI、**标记为发现**（写入当前站点黑板事实，自动生成键）、**→ Issue**（快速建单）。
+发送到 Repeater / Intruder / Decoder / Comparer / AI、**存到项目黑板**（写入项目事实，自动生成键）、**→ Issue**（快速建单）。
 
 面板快捷键：`Alt+I` 切换 Inspect、`Alt+P` 暂停 / 继续 AI、`Alt+R` 发送 Repeater、`Alt+X` 切换拦截。
 
@@ -79,7 +78,7 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 | `plan.js` | 消息序列清洗（tool_calls 配对）、工具结果裁剪、上下文压缩（checkpoint 摘要）、锚点块 |
 | `executor.js` | 工具注册表 `TOOL_REGISTRY` + 校验 / 超时 / 中断 / 模式分发（manual / task / chat）+ 溢出区（spill） |
 | `llm.js` | LLM 调用与流式接收、端点归一化、超时与重试、意图分类、`runChat`、token 估算 |
-| `memory.js` | 项目 / 黑板 / 会话 / 站点 / 工作区 / 技能 / checkpoint / 级联清理 |
+| `memory.js` | 项目 / 黑板 / 会话 / 工作区 / 技能 / checkpoint / 级联清理与迁移 |
 | `guards.js` | 空想、乱猜、未验证结论检测 |
 | `errors.js` | 稳定错误码、错误归一化、可重试白名单 |
 | `expert_round.js` `experts.js` | 复核审计员的只读回合引擎与定义（≤3 步、只读白名单） |
@@ -108,7 +107,7 @@ AI 任务专用（不可手动直调）：`upsert_fact` `get_fact` `rebuttal_che
 | --- | --- |
 | LLM | `llmConfig`（引擎唯一读取点）、`llm_endpoints`、`f12x_models_v1`（模型条目）、`f12x_model_active`（默认模型 id）；旧版独立键 `llm_api_key` / `llm_base_url` / `llm_model` 仍兼容 |
 | 行为 | `approvalLevel`（`read_auto_write_approve` 默认 / `full_auto` / `all_approve`）、`f12x_thinking_limit`（思考字符上限，0=不限）、`f12x_context_window`（压缩窗口）、`f12x_guard_profile`（auto / lite / full）、`f12x_local_warm`（本地空闲保活）、`f12x_ai_mode`·`f12x_ai_nothink`（localStorage，会话 UI 记忆） |
-| 数据 | `projects_v2`、`conversations_index_v2`（会话元数据索引）、`conv:<convId>`（单会话全文）、`active_conv_v2`、`sites_v1`、`active_site_v1`、`skills_data`、`f12x_issues_v1`、`f12x_repeater_history_v1`、`f12x_pending_approval_v1`、`f12x_intercept_snapshot_v1`、`shots_index_v1`（截图索引） |
+| 数据 | `projects_v2`、`conversations_index_v2`（会话元数据索引）、`conv:<convId>`（单会话全文）、`active_conv_v2`、`skills_data`、`f12x_issues_v1`、`f12x_repeater_history_v1`、`f12x_pending_approval_v1`、`f12x_intercept_snapshot_v1`、`shots_index_v1`（截图索引） |
 | 会话级 | `workspace:{convId}`、`spill:{convId}:{key}` + `spill_index:{convId}`、`shot_*`（截图） |
 
 淘汰与上限：会话 100 个（保留活跃会话）、单会话消息 400 条、`events` 500 条、黑板事实 500 条 / 项目、工作区条目 2000 条、审计 200 条、网络 2000 条、控制台 200 条、截图 5 张、溢出区 30 条 / 会话。旧版全量数组 `conversations_v2` 会在扩展启动时**自动迁移**为「索引 + 每会话一键」。
@@ -163,7 +162,6 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 ## 已知边界（如实说明）
 
 - 轨迹面板是 archify 引擎渲染的**静态 SVG + 自定义缩放 / 拖拽**：扩展 CSP 禁止内联查看器脚本，故不内嵌官方交互查看器；需要完整交互时用「打开完整工件」下载官方 HTML。`lifecycle` / `sequence` 渲染路径的代码保留但当前未接线。
-- 站点「会话」页签是**按 scope 域名做文本匹配**（标题 / 目标 / 消息正文，先廉价匹配再最多深读 30 个会话详情），不是精确的"站点↔会话"外键；站点没填 scope 时无法匹配。
 - 拦截仅请求阶段（放行 / 改头 / 伪造响应 / 丢弃），暂无响应阶段拦截。
 - 采集是**单标签页**的：切换标签页会 detach 旧会话并清空网络 / 脚本 / 控制台缓冲（同时清空面板列表），旧站数据不保留；要对比两站请分别落 Issue / 黑板。
 - **同源 Repeater** 走页面上下文 `fetch`（自动带会话 Cookie，含 httpOnly），因此受页面 `connect-src` CSP 约束；12s 超时写在页面上下文内部，失败会自动回退扩展 `fetch`（无会话 Cookie）并在 `note` 里标注原因。
@@ -192,7 +190,6 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 ## 本次修复（通读全量源码后）
 
 - **Intruder 停止真正生效**：新增 `tool:intruder_stop`，路由层持 `AbortController` 并下发给 `intruder`；面板「停止」不再误发 `ai:stop`，结果摘要显示「已中断（发出 N/M）」。
-- **站点「会话」页签落地**：`renderSiteSessions()` 按站点 scope 域名匹配会话标题 / 目标 / 消息正文（先廉价匹配，再最多深读 30 个详情），点条目直接打开会话。
 - **Issue 有了独立入口**：顶栏新增剪贴板按钮（无 Issue 时空徽标隐藏），与网络详情「→ Issue」并存。
 - **Repeater 同源重放超时真正生效**：15s 外置定时器改为页面上下文内的 12s `AbortController`（外层定时器管不到页面里的 fetch）；失败时**真的**回退扩展 fetch，并在 `note` 里写明失败原因（原注释声称回退、代码直接返回）。
 - **面板补齐两个被丢弃的事件**：`expert_tool_done`（专家每步 ✓/✗ 行）、`ai:compaction_done`（压缩落地回执：丢几轮 / 多少 token → 摘要多少 token）。
@@ -200,10 +197,10 @@ node -e "const m=require('./manifest.json');console.log(m.name,m.version,m.manif
 - **恢复分栏拖拽**：补回脚本列表（宽度）与网络详情（高度）的 `.resizer` 元素——`initResizers()` 与 `openNetworkDetail()` 早已引用它们，此前因元素缺失而全程空转。
 - 顺手修正：专家卡 `aria-expanded` 与"默认折叠"实现不一致（读屏会误报展开态）。
 
-验证：`node --check` 全部 19 个 JS 通过；上述行为需在 `chrome://extensions` 重载扩展后手动回归（Intruder 停止 / 站点会话页签 / 顶栏 Issue / 同源重放 / 专家步骤行 / 两处拖拽条）。
+验证：`node --check` 全部 19 个 JS 通过；上述行为需在 `chrome://extensions` 重载扩展后手动回归（Intruder 停止 / 顶栏 Issue / 同源重放 / 专家步骤行 / 两处拖拽条）。
 
 ## 路线图
 
 - 宏录制 / 回放（把 Repeater / Intruder / navigate 序列 + 变量注入固化为工具链宏）——手动主线下一项。
-- 站点「会话」页签：按站点聚合相关 AI 会话（0.2.2 已实现文本匹配版，0.3.0 将随「项目」容器改为外键）。
+- 项目视图（持久化容器：黑板 / Issue / 模板 / 会话，方案 001 / P6）。
 - 方案_v4 后续项：P4 重大结论升级为独立外部审计员、`call_expert` 同焦点去重。

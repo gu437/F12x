@@ -750,145 +750,67 @@ export function parseSkillFrontmatter(content) {
 // 工具自然语言映射（动作确认/偏离检测共用）
 
 // ============================================================
-// v0.2 新增：站点工作区（Site 一等实体）——方案第六章数据模型
-// Site { id, name, scope[], desc?, createdAt, updatedAt, facts[], templates[] }
-// Fact { id, key, value, source:'user'|'ai', confidence?, tags[], createdAt }
-// TaskTemplate { id, name, desc, kind, params, defaults?, instructions }
+// 站点工作区已下线（方案 001 / P3）：数据一次性迁入项目
+// 规则：每个站点 → 同名项目（重名加后缀）；facts/templates 并入；原数据留一份 sites_backup_v1
 // ============================================================
-export const SITES_KEY = "sites_v1";
-export const ACTIVE_SITE_KEY = "active_site_v1";
+export const SITES_BACKUP_KEY = "sites_backup_v1";
 
-export async function listSites() {
-  const r = await chrome.storage.local.get(SITES_KEY);
-  const sites = r[SITES_KEY] || {};
-  return Object.values(sites).map(s => ({
-    id: s.id, name: s.name, desc: s.desc || "", scope: s.scope || [],
-    factsCount: (s.facts || []).length, templatesCount: (s.templates || []).length,
-    createdAt: s.createdAt, updatedAt: s.updatedAt
-  })).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-}
-
-export async function getSite(siteId) {
-  if (!siteId) return null;
-  const r = await chrome.storage.local.get(SITES_KEY);
-  const sites = r[SITES_KEY] || {};
-  return sites[siteId] || null;
-}
-
-export async function saveSite(site) {
-  if (!site?.id) return;
-  const r = await chrome.storage.local.get(SITES_KEY);
-  const sites = r[SITES_KEY] || {};
-  site.updatedAt = Date.now();
-  sites[site.id] = site;
-  await chrome.storage.local.set({ [SITES_KEY]: sites });
-}
-
-export async function createSite(name, desc, scope) {
-  const r = await chrome.storage.local.get(SITES_KEY);
-  const sites = r[SITES_KEY] || {};
-  const id = "s_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
-  const site = {
-    id,
-    name: String(name || "未命名站点").substring(0, 50),
-    desc: String(desc || "").substring(0, 200),
-    scope: Array.isArray(scope) ? scope.filter(Boolean).slice(0, 20) : [],
-    facts: [], templates: [],
-    createdAt: Date.now(), updatedAt: Date.now()
-  };
-  sites[id] = site;
-  await chrome.storage.local.set({ [SITES_KEY]: sites });
-  return site;
-}
-
-export async function deleteSite(siteId) {
-  const r = await chrome.storage.local.get([SITES_KEY, ACTIVE_SITE_KEY]);
-  const sites = r[SITES_KEY] || {};
-  delete sites[siteId];
-  await chrome.storage.local.set({ [SITES_KEY]: sites });
-  if (r[ACTIVE_SITE_KEY] === siteId) await chrome.storage.local.remove(ACTIVE_SITE_KEY);
-}
-
-export async function renameSite(siteId, { name, desc, scope } = {}) {
-  const site = await getSite(siteId);
-  if (!site) return { error: "站点不存在", code: "NOT_FOUND" };
-  if (name !== undefined) site.name = String(name).substring(0, 50);
-  if (desc !== undefined) site.desc = String(desc).substring(0, 200);
-  if (scope !== undefined) site.scope = Array.isArray(scope) ? scope.filter(Boolean).slice(0, 20) : site.scope;
-  await saveSite(site);
-  return { ok: true, site };
-}
-
-export async function getActiveSiteId() {
-  const r = await chrome.storage.local.get(ACTIVE_SITE_KEY);
-  return r[ACTIVE_SITE_KEY] || null;
-}
-
-export async function setActiveSiteId(siteId) {
-  await chrome.storage.local.set({ [ACTIVE_SITE_KEY]: siteId || null });
-  return siteId;
-}
-
-// --- 站点笔记（用户手动标记的持久化事实，与 AI 黑板分离） ---
-export async function addSiteFact(siteId, { key, value, tags = [], confidence = "medium" }) {
-  const site = await getSite(siteId);
-  if (!site) return { error: "站点不存在", code: "NOT_FOUND" };
-  const fact = {
-    id: "f_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6),
-    key: String(key || "").substring(0, 120) || `fact-${Date.now().toString(36)}`,
-    value: String(value || "").substring(0, 2000),
-    source: "user", // 手动标记发现（用户笔记，非 AI 黑板）
-    confidence: String(confidence || "medium"),
-    tags: Array.isArray(tags) ? tags.slice(0, 10) : [],
-    createdAt: Date.now()
-  };
-  site.facts = site.facts || [];
-  site.facts.push(fact);
-  if (site.facts.length > 500) site.facts = site.facts.slice(-500);
-  await saveSite(site);
-  return { ok: true, fact, total: site.facts.length };
-}
-
-export async function removeSiteFact(siteId, factId) {
-  const site = await getSite(siteId);
-  if (!site) return { error: "站点不存在", code: "NOT_FOUND" };
-  site.facts = (site.facts || []).filter(f => f.id !== factId);
-  await saveSite(site);
-  return { ok: true };
-}
-
-// --- 任务模板（站点级，用户主导自动化入口） ---
-export async function addSiteTemplate(siteId, tpl) {
-  const site = await getSite(siteId);
-  if (!site) return { error: "站点不存在", code: "NOT_FOUND" };
-  const template = {
-    id: "t_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6),
-    name: String(tpl.name || "未命名模板").substring(0, 50),
-    desc: String(tpl.desc || "").substring(0, 200),
-    kind: ["dir_scan", "api_enum", "inject_verify", "param_fuzz", "custom"].includes(tpl.kind) ? tpl.kind : "custom",
-    params: tpl.params || { url: "", payload: "" },
-    defaults: tpl.defaults || {},
-    instructions: String(tpl.instructions || "").substring(0, 4000),
-    createdAt: Date.now()
-  };
-  site.templates = site.templates || [];
-  site.templates.push(template);
-  await saveSite(site);
-  return { ok: true, template };
-}
-
-export async function deleteSiteTemplate(siteId, templateId) {
-  const site = await getSite(siteId);
-  if (!site) return { error: "站点不存在", code: "NOT_FOUND" };
-  site.templates = (site.templates || []).filter(t => t.id !== templateId);
-  await saveSite(site);
-  return { ok: true };
-}
-
-// 由当前 URL 推导建议的站点 scope（主域名）
-export function deriveScopeFromUrl(url) {
-  try {
-    const u = new URL(url);
-    return [u.origin];
-  } catch (e) { return []; }
+export async function migrateSitesToProjectsIfNeeded() {
+  const r = await chrome.storage.local.get(["sites_v1", "active_site_v1"]);
+  const sites = r.sites_v1;
+  if (!sites || typeof sites !== "object" || Array.isArray(sites)) {
+    if (r.sites_v1 !== undefined || r.active_site_v1 !== undefined) {
+      await chrome.storage.local.remove(["sites_v1", "active_site_v1"]);
+    }
+    return { migrated: 0 };
+  }
+  const list = Object.values(sites).filter((x) => x && x.id);
+  if (!list.length) {
+    await chrome.storage.local.remove(["sites_v1", "active_site_v1"]);
+    return { migrated: 0 };
+  }
+  const index = await readProjectIndex();
+  const names = new Set(index.map((m) => m.name));
+  let migrated = 0;
+  for (const site of list) {
+    let name = String(site.name || "站点").substring(0, 50).trim() || "站点";
+    if (names.has(name)) {
+      let k = 2;
+      while (names.has(name + " (" + k + ")")) k++;
+      name = name + " (" + k + ")";
+    }
+    names.add(name);
+    const facts = (Array.isArray(site.facts) ? site.facts : []).map((x) => ({
+      key: String(x.key || "").substring(0, 120),
+      category: "site",
+      summary: String(x.value || "").substring(0, 2000),
+      confidence: String(x.confidence || "medium").substring(0, 10),
+      body: Array.isArray(x.tags) && x.tags.length ? "tags: " + x.tags.join(", ") : "",
+      convId: "", auto: false, source: "user",
+      createdAt: x.createdAt || Date.now(),
+    })).filter((x) => x.key);
+    const templates = (Array.isArray(site.templates) ? site.templates : []).map((t) => ({
+      id: t.id || "tpl_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6),
+      name: String(t.name || "模板").substring(0, 80),
+      kind: String(t.kind || "custom").substring(0, 30),
+      desc: String(t.desc || "").substring(0, 500),
+      params: t.params && typeof t.params === "object" ? t.params : {},
+      instructions: String(t.instructions || "").substring(0, 5000),
+      createdAt: t.createdAt || Date.now(),
+    }));
+    const project = {
+      id: "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8),
+      name,
+      desc: (String(site.desc || "").substring(0, 180) + "（由站点工作区迁移）").trim(),
+      facts, issues: [], templates,
+      createdAt: site.createdAt || Date.now(), updatedAt: Date.now(),
+    };
+    await chrome.storage.local.set({ [projectKey(project.id)]: project });
+    index.push(projMeta(project));
+    migrated++;
+  }
+  await chrome.storage.local.set({ [PROJECTS_INDEX_KEY]: index });
+  await chrome.storage.local.set({ [SITES_BACKUP_KEY]: sites }); // 回滚保险（P7 再清理）
+  await chrome.storage.local.remove(["sites_v1", "active_site_v1"]);
+  return { migrated };
 }

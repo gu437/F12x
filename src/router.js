@@ -22,13 +22,10 @@ import {
   metadataSearch, collectElementCodeBySelector
 } from "./debugger.js";
 import {
-  listSites, createSite, getSite, deleteSite, renameSite,
-  getActiveSiteId, setActiveSiteId, addSiteFact, removeSiteFact,
-  addSiteTemplate, deleteSiteTemplate, deriveScopeFromUrl,
   listConversations, getConversation, saveConversation,
   createConversation, deleteConversation,
   listProjects, createProject, renameProject, deleteProject,
-  listAIFindings, removeAIFinding
+  listAIFindings, removeAIFinding, upsertFact, AI_PROJECT_ID
 } from "./memory.js";
 
 const VERSION = "0.2.2";
@@ -60,7 +57,6 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "util:get_state") {
     (async () => {
       const llmConfig = await getLLMConfig().catch(() => null);
-      const activeSiteId = await getActiveSiteId();
       sendResponse({
         ok: true,
         state: {
@@ -71,7 +67,6 @@ export function handleMessage(message, sender, sendResponse) {
           interceptQueueCount: appState.interceptQueue.length,
           // 队列摘要（面板轮询对齐用——防 SW 重启 released_all 广播期间断连导致横幅/计数残留）
           interceptQueue: appState.interceptQueue.map(i => ({ pausedId: i.pausedId, url: i.url, method: i.method })),
-          activeSiteId,
           llmConfigured: !!(llmConfig && llmConfig.baseUrl && llmConfig.apiKey),
           version: VERSION
         }
@@ -411,96 +406,26 @@ export function handleMessage(message, sender, sendResponse) {
   }
 
   // === 站点工作区 ===
-  if (type === "site:list") {
-    (async () => {
-      try {
-        const sites = await listSites();
-        const activeId = await getActiveSiteId();
-        sendResponse({ ok: true, sites, activeId });
-      } catch (e) { sendResponse({ ok: false, error: e.message }); }
-    })();
-    return true;
-  }
-  if (type === "site:create") {
-    (async () => {
-      try {
-        const scope = message.scope || deriveScopeFromUrl(appState.debuggeeUrl);
-        const site = await createSite(message.name, message.desc, scope);
-        sendResponse({ ok: true, site });
-      } catch (e) { sendResponse({ ok: false, error: e.message }); }
-    })();
-    return true;
-  }
-  if (type === "site:get") {
-    (async () => {
-      try { sendResponse({ ok: true, site: await getSite(message.siteId) }); }
-      catch (e) { sendResponse({ ok: false, error: e.message }); }
-    })();
-    return true;
-  }
-  if (type === "site:rename") {
-    (async () => {
-      try {
-        const r = await renameSite(message.siteId, { name: message.name, desc: message.desc, scope: message.scope });
-        sendResponse({ ok: r.ok !== false, ...r });
-      } catch (e) { sendResponse({ ok: false, error: e.message }); }
-    })();
-    return true;
-  }
-  if (type === "site:delete") {
-    (async () => {
-      try { await deleteSite(message.siteId); sendResponse({ ok: true }); }
-      catch (e) { sendResponse({ ok: false, error: e.message }); }
-    })();
-    return true;
-  }
-  if (type === "site:set_active") {
-    (async () => {
-      try {
-        await setActiveSiteId(message.siteId || null);
-        busEmit("site:active", { siteId: message.siteId || null });
-        sendResponse({ ok: true });
-      } catch (e) { sendResponse({ ok: false, error: e.message }); }
-    })();
-    return true;
-  }
-  if (type === "site:fact_add") {
-    (async () => {
-      try {
-        const r = await addSiteFact(message.siteId, { key: message.key, value: message.value, tags: message.tags });
-        sendResponse({ ok: r.ok !== false, ...r });
-      } catch (e) { sendResponse({ ok: false, error: e.message }); }
-    })();
-    return true;
-  }
-  if (type === "site:fact_remove") {
-    (async () => {
-      try { await removeSiteFact(message.siteId, message.factId); sendResponse({ ok: true }); }
-      catch (e) { sendResponse({ ok: false, error: e.message }); }
-    })();
-    return true;
-  }
-  if (type === "site:template_add") {
-    (async () => {
-      try {
-        const r = await addSiteTemplate(message.siteId, message.template || {});
-        sendResponse({ ok: r.ok !== false, ...r });
-      } catch (e) { sendResponse({ ok: false, error: e.message }); }
-    })();
-    return true;
-  }
-  if (type === "site:template_delete") {
-    (async () => {
-      try { await deleteSiteTemplate(message.siteId, message.templateId); sendResponse({ ok: true }); }
-      catch (e) { sendResponse({ ok: false, error: e.message }); }
-    })();
-    return true;
-  }
-  // === AI 数据区（侧边栏 AI 模块：会话 / 发现，独立于用户工作区） ===
   if (type === "project:list") {
     (async () => {
       try { sendResponse({ ok: true, projects: await listProjects() }); }
       catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "project:fact_add") {
+    // 手动"存到项目黑板"（原「存到站点」；未绑定项目时写 AI 全局黑板）
+    (async () => {
+      try {
+        const pid = message.projectId || AI_PROJECT_ID;
+        const res = await upsertFact(pid, {
+          key: message.key, category: message.category || "misc",
+          summary: message.value || message.summary || "", body: message.body || "",
+          confidence: message.confidence || "medium", source: "user", auto: false,
+        });
+        if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true, key: res.key });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;
   }
