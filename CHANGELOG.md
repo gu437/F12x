@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · feat：内置 AI 接入项目资产与测试计划（方案 009 / 6.6）
+- 改了什么：新增 `src/ai_assets.js`（`list_assets/get_asset` 项目隔离、原文不脱敏；`propose_tests` 只生成 IDOR/BFLA/CSRF/注入计划、不发请求）；注册 4 个 G1 工具 `list_assets/get_evidence/get_asset/propose_tests`，同步 prompts/executor/experts/agent（LITE + APPROVAL_G1）；anchor 注入资产计数、最近证据索引、身份索引，env 注入资产计数；证据卡新增「AI 分析」；行为边界补充资产原文与 propose_tests 语义。
+- 为什么：P1–P7 的新能力（证据/身份/请求/序列/基线/端点）此前 AI 完全看不到；不接进去，内置 AI 仍停在旧工具面。
+- 验证：`dev/run.mjs` 110/110；新增 AI 资产 L1（原文/项目隔离/propose_tests/上下文注入）；工具三处同步 + 28 项 schema 检查；真实 UI 证据卡「AI 分析」→ 会话选择器（该项目下 0 个会话）正常打开。
+- 提交：`e65a4c6`
+
 ### 2026-10-27 · feat：P7 收尾（5 项导航 / 请求资产 / 端点清单 / 分诊）
 - 改了什么：导航收敛为 `页面 / 流量 / 测试台 / 项目 / AI`；Cookie/脚本降级到 `Ctrl/Cmd+K` 命令面板（JS 源码搜索、复制全部 Cookie、打开视图），网络详情增加「复制 Cookie」；新增 `src/assets.js`（项目请求资产 CRUD、`{{变量}}`、端点清单聚合）；router 增加 `request:*`、`inventory:*`；项目新增「请求」页签（运行/变量/身份/存证据/刷新端点）；Intruder 支持异常优先/状态/长度排序、异常计数、点击行看响应。
 - 为什么：一级导航只保留高频面；请求资产让一次性流量可复用；端点清单提供 API 资产视角；Intruder 需要从“跑完”到“能看异常”。
