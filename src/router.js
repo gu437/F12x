@@ -33,6 +33,8 @@ import { saveEvidence, listEvidence, getEvidence, removeEvidence, markEvidenceIs
 import { saveIdentity, listIdentities, getIdentity, removeIdentity } from "./identity.js";
 import { extractRefs, applyRef, valuesFromText, candidatesFor } from "./mutate.js";
 import { classifyCell } from "./matrix.js";
+import { diffJson, diffSummary, hasFieldDiff } from "./diff.js";
+import { saveBaseline, listBaselines, getBaseline, removeBaseline } from "./baseline.js";
 import { saveSequence, listSequences, getSequence, removeSequence, applyVars, unresolvedVars, extractVar } from "./sequence.js";
 
 // 持久数据必须落在项目里：没有项目就明确报错（项目只在项目页创建）
@@ -506,6 +508,53 @@ export function handleMessage(message, sender, sendResponse) {
     })();
     return true;
   }
+  if (type === "baseline:save") {
+    (async () => {
+      try {
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目（基线必须归属项目）", code: "NOT_FOUND" });
+        const res = await saveBaseline({ ...message, projectId: pid });
+        if (res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true, id: res.id, name: res.name });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "baseline:list") {
+    (async () => {
+      try {
+        const pid = message.projectId || await requireActiveProjectId();
+        sendResponse({ ok: true, ...(await listBaselines(pid || null)) });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "baseline:get" || type === "baseline:remove") {
+    (async () => {
+      try {
+        if (type === "baseline:get") {
+          const b = await getBaseline(message.id);
+          if (!b) return sendResponse({ ok: false, error: "基线不存在", code: "NOT_FOUND" });
+          return sendResponse({ ok: true, baseline: b });
+        }
+        await removeBaseline(message.id);
+        sendResponse({ ok: true });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "baseline:diff") {
+    (async () => {
+      try {
+        const b = await getBaseline(message.id);
+        if (!b) return sendResponse({ ok: false, error: "基线不存在", code: "NOT_FOUND" });
+        const cur = message.current || {};
+        const diff = diffJson(b.body || "", cur.body || "");
+        sendResponse({ ok: true, diff, summary: diffSummary(diff), baseline: { status: b.status, name: b.name } });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
   if (type === "sequence:list") {
     (async () => {
       try {
@@ -649,6 +698,10 @@ export function handleMessage(message, sender, sendResponse) {
         for (const row of rows) {
           row.cells.forEach((cell, i) => {
             cell.verdict = classifyCell(cell, baseline ? baseline.cells[i] : null);
+            const bd = baseline ? baseline.cells[i] : null;
+            cell.diff = bd ? diffJson(bd.body || "", cell.body || "") : null;
+            cell.diffSummary = cell.diff ? diffSummary(cell.diff) : "";
+            if (cell.verdict === "same" && hasFieldDiff(cell.diff)) cell.verdict = "field-diff";
             cell.baselineStatus = baseline ? baseline.cells[i]?.status : null;
             cell.baselineLength = baseline ? baseline.cells[i]?.length : null;
           });

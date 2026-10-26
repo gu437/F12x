@@ -1356,7 +1356,7 @@ function renderMatrixResult(r) {
     app.matrix.selected = { row, cell };
     const det = $("mx-detail");
     if (det) det.innerHTML = `<div class="ev-sec-title">${esc(row.name)} · ${esc(cell.value)} · ${esc(String(cell.status))}（${esc(matrixVerdictText(cell.verdict))}）</div>
-      <pre class="ev-pre">${esc(cell.body || "")}</pre>
+      <pre class="ev-pre">${esc(cell.body || "")}</pre>${cell.diffSummary ? `<div class="ev-sec-title">字段差异：${esc(cell.diffSummary)}</div>${diffHtml(cell.diff)}` : ""}
       <div class="proj-actions"><button id="mx-save-ev" class="mini-btn">存为证据</button></div>`;
     const sv = $("mx-save-ev");
     if (sv) sv.addEventListener("click", () => evidenceSaveDialog({
@@ -1562,6 +1562,68 @@ async function runSequence(id) {
   }));
 }
 
+// ============================================================
+// ===== 语义差异 / 基线（方案 009 / P5） =====
+// ============================================================
+function diffHtml(d, limit = 60) {
+  if (!d) return "";
+  const escV = (v) => {
+    const s = typeof v === "string" ? v : JSON.stringify(v);
+    return esc(String(s == null ? "" : s).substring(0, 200));
+  };
+  const rows = [];
+  if (d.json === false) {
+    for (const l of (d.addedLines || []).slice(0, limit)) rows.push(`<div class="df-add">+ ${esc(l)}</div>`);
+    for (const l of (d.removedLines || []).slice(0, limit)) rows.push(`<div class="df-del">- ${esc(l)}</div>`);
+  } else {
+    for (const x of (d.added || []).slice(0, limit)) rows.push(`<div class="df-add">+ ${esc(x.path)} = ${escV(x.value)}</div>`);
+    for (const x of (d.removed || []).slice(0, limit)) rows.push(`<div class="df-del">- ${esc(x.path)} = ${escV(x.value)}</div>`);
+    for (const x of (d.changed || []).slice(0, limit)) rows.push(`<div class="df-chg">~ ${esc(x.path)}: ${escV(x.from)} → ${escV(x.to)}</div>`);
+  }
+  return rows.length ? `<div class="df-list">${rows.join("")}</div>` : '<div class="placeholder">无字段差异</div>';
+}
+
+async function saveRepeaterBaseline() {
+  const resp = evidenceResponseOfRepeater();
+  if (!resp) return toast("先发送一次请求再存基线");
+  const url = $("rep-url") ? $("rep-url").value.trim() : "";
+  if (!url) return toast("URL 必填");
+  const r = await api("baseline:save", {
+    projectId: seqProjectId(),
+    name: `${$("rep-method") ? $("rep-method").value : "GET"} ${url}`.substring(0, 120),
+    method: $("rep-method") ? $("rep-method").value : "GET",
+    url,
+    status: resp.status,
+    headers: resp.headers,
+    body: resp.body,
+  });
+  if (!r.ok) return toast("保存基线失败：" + (r.error || ""));
+  toast("已保存基线：" + (r.name || ""));
+}
+
+async function compareRepeaterBaseline() {
+  const resp = evidenceResponseOfRepeater();
+  if (!resp) return toast("先发送一次请求再对比基线");
+  const pid = seqProjectId();
+  const r = await api("baseline:list", { projectId: pid });
+  const rows = r.ok ? (r.baselines || []) : [];
+  if (!rows.length) return toast("还没有基线：先点「存基线」");
+  openModal(`<h3>对比基线</h3>
+    <label>基线</label><select id="bl-select" class="select-mini">${rows.map((b) => `<option value="${esc(b.id)}">${esc(b.name)}（${esc(String(b.status))} · ${new Date(b.createdAt || 0).toLocaleString()}）</option>`).join("")}</select>
+    <div id="bl-result"></div>
+    <div class="modal-actions"><button id="bl-close" class="primary">关闭</button></div>`);
+  const box = document.querySelector(".modal-box");
+  box.querySelector("#bl-close").addEventListener("click", closeModal);
+  const run = async () => {
+    const d = await api("baseline:diff", { id: $("bl-select").value, current: { body: resp.body } });
+    const out = $("bl-result");
+    if (!d.ok) { out.innerHTML = `<div class="placeholder">${esc(d.error || "")}</div>`; return; }
+    out.innerHTML = `<div class="ev-sec-title">${esc(d.summary || "")}</div>${diffHtml(d.diff)}`;
+  };
+  $("bl-select").addEventListener("change", run);
+  run();
+}
+
 function initRequestModule() {
   document.querySelectorAll('#view-request .tabs .tab').forEach(t => {
     t.addEventListener("click", () => {
@@ -1576,6 +1638,8 @@ function initRequestModule() {
   if ($("rep-identity-manage")) $("rep-identity-manage").addEventListener("click", openIdentityManager);
   if ($("rep-matrix")) $("rep-matrix").addEventListener("click", openMatrixDialog);
   if ($("rep-to-seq")) $("rep-to-seq").addEventListener("click", addToSequenceDialog);
+  if ($("rep-baseline")) $("rep-baseline").addEventListener("click", saveRepeaterBaseline);
+  if ($("rep-baseline-cmp")) $("rep-baseline-cmp").addEventListener("click", compareRepeaterBaseline);
   refreshIdentitySelect().catch(() => {});
   if ($("rep-evidence")) $("rep-evidence").addEventListener("click", saveRepeaterEvidence);
   // Repeater 历史存到项目黑板

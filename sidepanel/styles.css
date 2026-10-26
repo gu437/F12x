@@ -1897,3 +1897,10 @@ body {
 .seq-run-head { display: flex; justify-content: space-between; gap: 6px; font-size: 11px; }
 .seq-run-meta { font-size: 10px; color: var(--text-4); word-break: break-all; margin-top: 2px; }
 .seq-run-err { font-size: 10px; color: #b91c1c; margin-top: 2px; }
+
+/* 语义差异（方案 009 / P5） */
+.df-list { font-family: var(--mono); font-size: 10px; max-height: 180px; overflow: auto; border: 1px solid var(--surface-4); border-radius: 6px; padding: 4px 6px; background: var(--surface-2); }
+.df-add { color: #047857; }
+.df-del { color: #b91c1c; }
+.df-chg { color: #1d4ed8; }
+.mx-field-diff { background: #f5f0ff; color: #6d28d9; }

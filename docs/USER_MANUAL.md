@@ -182,7 +182,7 @@ URL 单元格左侧的 `⧉` 可直接复制完整 URL（悬停单元格也能�
 | --- | --- |
 | 身份选择器 / `管理身份` | 选当前会话或某个身份；`管理身份` 抓取/编辑/删除（Cookie + storage + 认证头） |
 | `加入序列` | 把当前请求追加到项目序列（可新建） |
-| `矩阵` | 从当前请求提取对象引用（路径/查询/JSON/头），选身份与值批量重放；结果着色（越权暴露/状态差异/长度差异），可导出 CSV、单元格存证据 |
+| `矩阵` | 从当前请求提取对象引用（路径/查询/JSON/头），选身份与值批量重放；结果着色（越权暴露/状态差异/长度差异/字段变化），可导出 CSV、单元格存证据 |
 | 方法下拉 / URL 输入 | 目标与方法 |
 | 请求头文本框 | 逐行 `key: value` |
 | 请求体 | 原始 body |
@@ -191,6 +191,7 @@ URL 单元格左侧的 `⧉` 可直接复制完整 URL（悬停单元格也能�
 | `→ Comparer` | 把上次响应填进 Comparer 的 A 侧 |
 | `→ Decoder` | 把上次响应填进 Decoder 输入 |
 | `存证据` | 把本次请求/响应存为项目证据 |
+| `存基线` / `对比基线` | 保存本次响应为接口基线；再次发送后与基线做 JSON 字段级差异（忽略 timestamp/requestId 等易变字段） |
 | `存到黑板` | 把最近 15 条历史写成项目的一条黑板事实（key=`repeater-history`） |
 | 历史列表项 | 点击只回填**方法与 URL**（头/体不恢复） |
 
@@ -480,7 +481,7 @@ A/B 两段文本 → `对比` → 输出长度差、相似度、内容包含度�
 
 - 全部在 `chrome.storage.local`（外加两项 UI 记忆在扩展页 `localStorage`）；无自有后端、无遥测。
 - 会话是**索引 + 每会话一键**：`conversations_index_v2`（元数据）+ `conv:<id>`（正文）。
-- 项目 `projects_index_v2` + `project:<id>`；证据 `evidence_index_v1` + `evidence:<id>`；身份 `identity_index_v1` + `identity:<id>`；序列 `sequences_index_v1` + `sequence:<id>`；身份切换临时快照 `identity_txn_v1`。
+- 项目 `projects_index_v2` + `project:<id>`；证据 `evidence_index_v1` + `evidence:<id>`；身份 `identity_index_v1` + `identity:<id>`；序列 `sequences_index_v1` + `sequence:<id>`；基线 `baselines_index_v1` + `baseline:<id>`；身份切换临时快照 `identity_txn_v1`。
 - 溢出区 `spill:<convId>:<key>` + `spill_index:<convId>`；会话截图 `shot:<convId>:<key>` + `shot_index:<convId>`。
 - 旧版 `conversations_v2` 全量数组会在扩展启动时自动迁移。
 - 卸载扩展会**一并删除**这些数据；需要留存请先用 Issue 导出或自行备份。
