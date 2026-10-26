@@ -35,6 +35,8 @@ import { extractRefs, applyRef, valuesFromText, candidatesFor } from "./mutate.j
 import { classifyCell } from "./matrix.js";
 import { diffJson, diffSummary, hasFieldDiff } from "./diff.js";
 import { saveBaseline, listBaselines, getBaseline, removeBaseline } from "./baseline.js";
+import { exportBundle, importBundle } from "./bundle.js";
+import { buildReport } from "./report.js";
 import { saveSequence, listSequences, getSequence, removeSequence, applyVars, unresolvedVars, extractVar } from "./sequence.js";
 
 // 持久数据必须落在项目里：没有项目就明确报错（项目只在项目页创建）
@@ -504,6 +506,47 @@ export function handleMessage(message, sender, sendResponse) {
       try {
         const p = await ensureActiveProject();
         sendResponse({ ok: true, project: p ? { id: p.id, name: p.name } : null, issues: p ? (p.issues || []) : [] });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "bundle:export") {
+    (async () => {
+      try {
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先选择项目", code: "NOT_FOUND" });
+        const res = await exportBundle({ projectId: pid, includeIdentities: !!message.includeIdentities });
+        if (res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true, bundle: res.bundle });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "bundle:import") {
+    (async () => {
+      try {
+        const res = await importBundle(message.bundle, {});
+        if (res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true, projectId: res.projectId, name: res.name, counts: res.counts });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "report:build") {
+    (async () => {
+      try {
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先选择项目", code: "NOT_FOUND" });
+        const project = await getProject(pid);
+        if (!project) return sendResponse({ ok: false, error: "项目不存在", code: "NOT_FOUND" });
+        const evidenceMap = {};
+        for (const it of (project.issues || [])) for (const eid of (it.evidenceIds || [])) {
+          if (!evidenceMap[eid]) { const ev = await getEvidence(eid); if (ev) evidenceMap[eid] = ev; }
+        }
+        const format = message.format === "md" ? "md" : "html";
+        const content = buildReport({ project, issues: project.issues || [], evidenceMap, format, redact: message.redact !== false });
+        const safe = String(project.name || "project").replace(/[^\w\u4e00-\u9fa5.-]+/g, "_").slice(0, 40);
+        sendResponse({ ok: true, filename: "f12x-report-" + safe + (format === "md" ? ".md" : ".html"), content });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;

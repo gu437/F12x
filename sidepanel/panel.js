@@ -2302,6 +2302,78 @@ async function renderProjEvidence(p) {
 // ============================================================
 // ===== 项目模块（P6+：唯一持久化容器；列表 / 详情 / 跨模块联动） =====
 // ============================================================
+// ============================================================
+// ===== 备份 / 报告（方案 009 / P6） =====
+// ============================================================
+function downloadText(filename, text, mime = "application/octet-stream") {
+  const blob = new Blob([text], { type: mime });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+
+function openBackupDialog() {
+  const pid = seqProjectId();
+  if (!pid) return toast("请先选择项目");
+  openModal(`<h3>项目备份</h3>
+    <div class="bk-hint">导出包含项目、证据、序列、基线；「完整备份」额外包含身份（Cookie/Token 明文），请只保存在可信位置。</div>
+    <div class="proj-actions"><button id="bk-export" class="ctrl-btn primary">导出（不含身份）</button><button id="bk-export-full" class="mini-btn">完整备份（含身份）</button></div>
+    <div class="bk-hint">导入会新建项目（重名自动追加「（导入）」），身份/证据/序列/基线一并恢复。</div>
+    <input type="file" id="bk-file" accept=".json,application/json" class="text-input" />
+    <div id="bk-status" class="mini-label"></div>
+    <div class="modal-actions"><button id="bk-close" class="primary">关闭</button></div>`);
+  const box = document.querySelector(".modal-box");
+  box.querySelector("#bk-close").addEventListener("click", closeModal);
+  const doExport = async (includeIdentities) => {
+    $("bk-status").textContent = "导出中…";
+    const r = await api("bundle:export", { projectId: pid, includeIdentities });
+    if (!r.ok) { $("bk-status").textContent = "失败：" + (r.error || ""); return; }
+    downloadText("f12x-bundle-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(r.bundle, null, 2), "application/json");
+    $("bk-status").textContent = `已导出：证据 ${r.bundle.evidence.length} / 身份 ${r.bundle.identities.length} / 序列 ${r.bundle.sequences.length} / 基线 ${r.bundle.baselines.length}`;
+  };
+  box.querySelector("#bk-export").addEventListener("click", () => doExport(false));
+  box.querySelector("#bk-export-full").addEventListener("click", () => doExport(true));
+  box.querySelector("#bk-file").addEventListener("change", async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    $("bk-status").textContent = "导入中…";
+    try {
+      const bundle = JSON.parse(await f.text());
+      const r = await api("bundle:import", { bundle });
+      if (!r.ok) { $("bk-status").textContent = "失败：" + (r.error || ""); return; }
+      $("bk-status").textContent = `已导入「${r.name}」：证据 ${r.counts.evidence} / 身份 ${r.counts.identities} / 序列 ${r.counts.sequences} / 基线 ${r.counts.baselines}`;
+      await api("project:set_active", { projectId: r.projectId });
+      await loadProjects(r.projectId);
+      toast("备份已导入");
+    } catch (er) {
+      $("bk-status").textContent = "文件解析失败：" + er.message;
+    }
+  });
+}
+
+function openReportDialog() {
+  const pid = seqProjectId();
+  if (!pid) return toast("请先选择项目");
+  openModal(`<h3>导出报告</h3>
+    <label>格式</label><select id="rp-format" class="select-mini"><option value="html">HTML 单文件</option><option value="md">Markdown</option></select>
+    <label class="mini-label"><input type="checkbox" id="rp-redact" checked /> 脱敏（Cookie / Authorization / JWT / 邮箱 / 手机 / 内网 IP）</label>
+    <div id="rp-status" class="mini-label"></div>
+    <div class="modal-actions"><button id="rp-cancel">取消</button><button id="rp-build" class="primary">生成并下载</button></div>`);
+  const box = document.querySelector(".modal-box");
+  box.querySelector("#rp-cancel").addEventListener("click", closeModal);
+  box.querySelector("#rp-build").addEventListener("click", async () => {
+    const format = $("rp-format").value;
+    const redact = $("rp-redact").checked;
+    $("rp-status").textContent = "生成中…";
+    const r = await api("report:build", { projectId: pid, format, redact });
+    if (!r.ok) { $("rp-status").textContent = "失败：" + (r.error || ""); return; }
+    downloadText(r.filename, r.content, format === "md" ? "text/markdown" : "text/html");
+    $("rp-status").textContent = "已生成：" + r.filename;
+  });
+}
+
 async function loadProjects(focusId) {
   const r = await api("project:active");
   if (r.ok) { app.projects = r.projects || []; app.currentProject = r.project || null; }
@@ -2565,6 +2637,8 @@ function initProjectModule() {
     await loadProjects(app.projDetail.project.id);
     toast("已设为当前项目");
   });
+  if ($("proj-backup")) $("proj-backup").addEventListener("click", openBackupDialog);
+  if ($("proj-report")) $("proj-report").addEventListener("click", openReportDialog);
   const exp = $("proj-export");
   if (exp) exp.addEventListener("click", () => { if (app.projDetail) projectExport(app.projDetail.project.id); });
   const rename = $("proj-rename");
