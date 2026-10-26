@@ -1725,15 +1725,29 @@ function initProjectModule() {
     await projRefresh(); renderProjectList();
     toast("模板已添加");
   });
-  // 新建项目会话
   const newConv = $("proj-new-conv");
-  if (newConv) newConv.addEventListener("click", async () => {
+  // 新建项目会话：先让用户输入会话名称
+  if (newConv) newConv.addEventListener("click", () => {
     const p = app.projDetail && app.projDetail.project;
     if (!p) return;
-    const r = await api("ai:conversation_create", { projectId: p.id, title: "项目会话" });
-    if (!r.ok) return toast("新建会话失败：" + (r.error || ""));
-    switchView("ai");
-    await openAIDetail({ convId: r.conv.convId, title: r.conv.title, msgCount: 0, updatedAt: Date.now(), type: "task", projectId: p.id });
+    openModal(`<h3>新建会话</h3>
+      <label>会话名称</label>
+      <input id="pnc-title" class="text-input" placeholder="例如：登录接口分析" />
+      <div class="modal-actions"><button id="pnc-cancel">取消</button><button id="pnc-ok" class="primary">创建</button></div>`);
+    const box = document.querySelector(".modal-box");
+    if (!box) return;
+    const input = box.querySelector("#pnc-title");
+    if (input) input.focus();
+    box.querySelector("#pnc-cancel").addEventListener("click", closeModal);
+    box.querySelector("#pnc-ok").addEventListener("click", async () => {
+      const title = (($("pnc-title") && $("pnc-title").value) || "").trim();
+      if (!title) return toast("请输入会话名称");
+      const r = await api("ai:conversation_create", { projectId: p.id, title: title.substring(0, 60) });
+      if (!r.ok) return toast("新建会话失败：" + (r.error || ""));
+      closeModal();
+      switchView("ai");
+      await openAIDetail({ convId: r.conv.convId, title: r.conv.title, msgCount: 0, updatedAt: Date.now(), type: "task", projectId: p.id });
+    });
   });
   loadProjects().catch(() => {});
 }
