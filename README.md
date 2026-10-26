@@ -21,6 +21,7 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
 | ![测试台](docs/images/readme-testbench.png) | ![项目](docs/images/readme-project.png) |
 | **命令面板** | **Issue 工作台** |
 | ![命令面板](docs/images/readme-command.png) | ![Issue](docs/images/readme-issue.png) |
+
 ## 快速开始
 
 1. 打开 `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」，选择本目录。
