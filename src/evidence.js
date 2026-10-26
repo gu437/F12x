@@ -1,9 +1,9 @@
 // ==== 证据存储（方案 009 / P1） ====
-// 索引只放元数据，正文分键；证据不可变；响应体超过 2MB 截断并标记。
+// 索引只放元数据，正文分键；证据不可变；正文完整保存，不截断。
 // 与项目级联：deleteProjectEvidence(projectId) 由 memory.deleteProject 调用。
 
 const EVIDENCE_INDEX_KEY = "evidence_index_v1";
-const EVIDENCE_BODY_MAX = 2 * 1024 * 1024; // 2MB（字符近似）
+
 
 const evidenceKey = (id) => `evidence:${id}`;
 
@@ -32,8 +32,8 @@ async function computeEvidenceHash(parts) {
 
 function clipBody(body) {
   const s = String(body == null ? "" : body);
-  if (s.length <= EVIDENCE_BODY_MAX) return { body: s, truncated: false, originalLength: s.length };
-  return { body: s.slice(0, EVIDENCE_BODY_MAX), truncated: true, originalLength: s.length };
+  // 不截断：证据必须完整；超大响应的上下文问题交给 spill / 分片读取。
+  return { body: s, truncated: false, originalLength: s.length };
 }
 
 function normalizeHeaders(h) {
