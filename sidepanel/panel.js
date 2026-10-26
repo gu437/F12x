@@ -1392,7 +1392,7 @@ async function loadScriptContent(url) {
 }
 
 // ============================================================
-// ===== 项目模块（P6：唯一持久化容器：黑板 / Issue / 模板 / 会话） =====
+// ===== 项目模块（P6+：唯一持久化容器；列表 / 详情 / 跨模块联动） =====
 // ============================================================
 async function loadProjects(focusId) {
   const r = await api("project:active");
@@ -1401,7 +1401,7 @@ async function loadProjects(focusId) {
   renderProjectList();
   const id = focusId || (app.currentProject && app.currentProject.id);
   if (id) await openProjectDetail(id);
-  else { const d = $("project-detail"); if (d) d.classList.add("hidden"); }
+  else showProjectBrowser();
 }
 function renderProjectSelector() {
   const sel = $("project-selector");
@@ -1413,149 +1413,233 @@ function renderProjectSelector() {
 function renderProjectList() {
   const box = $("project-list");
   if (!box) return;
-  if (!app.projects.length) {
-    box.innerHTML = '<div class="placeholder">还没有项目：在上方输入名称创建（黑板 / Issue / 模板 / 会话都会归入项目）</div>';
+  const q = (($("project-search") && $("project-search").value) || "").trim().toLowerCase();
+  const rows = app.projects.filter((p) => !q || String(p.name || "").toLowerCase().includes(q) || String(p.desc || "").toLowerCase().includes(q));
+  if (!rows.length) {
+    box.innerHTML = '<div class="placeholder">' + (app.projects.length ? "没有匹配的项目" : "还没有项目：点右上角「新建」，黑板 / Issue / 模板 / 会话都会归入项目") + "</div>";
     return;
   }
-  box.innerHTML = app.projects.map((p) => `
+  box.innerHTML = rows.map((p) => `
     <div class="project-item ${app.currentProject && app.currentProject.id === p.id ? "active" : ""}" data-id="${esc(p.id)}">
       <div class="pj-name">${esc(p.name)}${app.currentProject && app.currentProject.id === p.id ? ' <span class="pj-cur">当前</span>' : ""}</div>
+      ${p.desc ? '<div class="pj-desc">' + esc(p.desc) + "</div>" : ""}
       <div class="pj-meta">会话 ${p.convCount || 0} · 事实 ${p.factsCount || 0} · Issue ${p.issueCount || 0} · 模板 ${p.templateCount || 0}</div>
     </div>`).join("");
   box.querySelectorAll(".project-item").forEach((el) => el.addEventListener("click", () => openProjectDetail(el.dataset.id)));
 }
+function showProjectBrowser() {
+  const b = $("project-browser"); const d = $("project-detail");
+  if (b) b.classList.remove("hidden");
+  if (d) d.classList.add("hidden");
+}
+function showProjectDetailView() {
+  const b = $("project-browser"); const d = $("project-detail");
+  if (b) b.classList.add("hidden");
+  if (d) d.classList.remove("hidden");
+}
 async function openProjectDetail(id) {
-  const d = $("project-detail");
-  if (!d) return;
   const r = await api("project:get", { projectId: id });
-  if (!r.ok) { d.classList.add("hidden"); return toast("读取项目失败：" + (r.error || "")); }
+  if (!r.ok) { showProjectBrowser(); return toast("读取项目失败：" + (r.error || "")); }
   app.projDetail = r;
-  d.classList.remove("hidden");
+  app.projEditIssueId = null;
+  showProjectDetailView();
   const p = r.project;
   $("project-title").textContent = p.name;
-  $("project-counts").textContent = `会话 ${r.conversations.length} · 事实 ${(p.facts || []).length} · Issue ${(p.issues || []).length} · 模板 ${(p.templates || []).length}`;
+  $("project-counts").textContent = `会话 ${r.conversations.length} · 事实 ${(p.facts || []).length} · Issue ${(p.issues || []).length} · 模板 ${(p.templates || []).length}` + (p.desc ? " · " + p.desc : "");
   $("proj-set-active").disabled = !!(app.currentProject && app.currentProject.id === p.id);
   renderProjFacts(p);
   renderProjIssues(p);
   renderProjTemplates(p);
   renderProjConvs(r.conversations);
-  document.querySelectorAll("#project-list .project-item").forEach((el) => el.classList.toggle("active", el.dataset.id === p.id));
+  renderProjectList();
 }
 function projPane(id, html) { const box = $(id); if (box) box.innerHTML = html; }
+function projRefresh() { if (app.projDetail) return openProjectDetail(app.projDetail.project.id); }
+
+// —— 黑板：新增 / 送入 AI / 删除 ——
 function renderProjFacts(p) {
   const rows = (p.facts || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  projPane("proj-facts", rows.length ? rows.map((f) => `
+  projPane("proj-facts-list", rows.length ? rows.map((f) => `
     <div class="fact-item">
       <div class="fact-key">${esc(f.key)} <span class="fact-tag">${esc(f.category || "misc")}</span><span class="fact-src">${esc(f.source || (f.auto ? "ai" : "user"))}</span></div>
       <div class="fact-sum">${esc(f.summary || "")}</div>
-      <button class="mini-btn danger" data-del-fact="${esc(f.key)}">删除</button>
-    </div>`).join("") : '<div class="placeholder">黑板为空：在请求详情「存到项目黑板」，或让 AI 用 upsert_fact 沉淀</div>');
+      <div class="proj-actions">
+        <button class="mini-btn" data-fact-ai="${esc(f.key)}">送入 AI</button>
+        <button class="mini-btn danger" data-del-fact="${esc(f.key)}">删除</button>
+      </div>
+    </div>`).join("") : '<div class="placeholder">黑板为空：上方添加，或在网络详情「存到项目黑板」，或让 AI 用 upsert_fact 沉淀</div>');
   const box = $("proj-facts");
   if (box) box.querySelectorAll("[data-del-fact]").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("删除该条黑板事实？")) return;
-    const r = await api("project:fact_remove", { projectId: app.projDetail.project.id, key: b.dataset.delFact });
+    const r = await api("project:fact_remove", { projectId: p.id, key: b.dataset.delFact });
     if (!r.ok) return toast("删除失败：" + (r.error || ""));
-    await openProjectDetail(app.projDetail.project.id);
-    renderProjectList();
+    await projRefresh(); renderProjectList();
+  }));
+  if (box) box.querySelectorAll("[data-fact-ai]").forEach((b) => b.addEventListener("click", () => {
+    const f = rows.find((x) => x.key === b.dataset.factAi);
+    if (!f) return;
+    const text = "[项目黑板] " + f.key + "（" + (f.category || "misc") + "）：" + (f.summary || "");
+    switchView("ai");
+    const input = $("ai-input");
+    if (input) { input.value = text; input.focus(); }
+    toast("已填入 AI 输入框");
   }));
 }
+
+// —— Issue：内联编辑（持久，只有用户删除才消失） ——
 function renderProjIssues(p) {
   const rows = (p.issues || []).slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  projPane("proj-issues", '<div class="proj-actions"><button id="proj-open-issues" class="ctrl-btn">打开 Issue 工作台</button></div>'
-    + (rows.length ? rows.map((it) => `
-      <div class="issue-item">
-        <span class="issue-sev sev-${esc(it.sev)}">${esc(ISSUE_SEV[it.sev] || it.sev)}</span>
-        <span class="issue-title">${esc(it.title || "（未命名）")}</span>
-        ${it.url ? '<span class="issue-url">' + esc(it.url) + '</span>' : ""}
-        <button class="mini-btn danger" data-del-issue="${esc(it.id)}">删除</button>
-      </div>`).join("") : '<div class="placeholder">暂无 Issue：可从请求详情「→ Issue」新建</div>'));
-  const open = $("proj-open-issues");
-  if (open) open.addEventListener("click", async () => {
-    await api("project:set_active", { projectId: p.id });
-    await issueRefresh();
-    openIssueManager(null);
-  });
+  projPane("proj-issues-list", (rows.length ? rows.map((it) => `
+    <div class="issue-item">
+      <span class="issue-sev sev-${esc(it.sev)}">${esc(ISSUE_SEV[it.sev] || it.sev)}</span>
+      <span class="issue-title">${esc(it.title || "（未命名）")}</span>
+      ${it.url ? '<span class="issue-url">' + esc(it.url) + "</span>" : ""}
+      <button class="mini-btn" data-edit-issue="${esc(it.id)}">编辑</button>
+      <button class="mini-btn danger" data-del-issue="${esc(it.id)}">删除</button>
+    </div>`).join("") : '<div class="placeholder">暂无 Issue：用上方表单新建，或从网络详情「→ Issue」</div>'));
   const box = $("proj-issues");
+  if (box) box.querySelectorAll("[data-edit-issue]").forEach((b) => b.addEventListener("click", () => {
+    const it = rows.find((x) => x.id === b.dataset.editIssue);
+    if (!it) return;
+    app.projEditIssueId = it.id;
+    piFill(it);
+  }));
   if (box) box.querySelectorAll("[data-del-issue]").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("删除该 Issue？删除后不可恢复")) return;
     const r = await api("issue:delete", { id: b.dataset.delIssue, projectId: p.id });
     if (!r.ok) return toast("删除失败：" + (r.error || ""));
-    await openProjectDetail(p.id);
-    renderProjectList();
+    await projRefresh(); renderProjectList();
   }));
 }
+function piFill(it) {
+  const set = (id, v) => { const el = $(id); if (el) el.value = v || ""; };
+  set("pi-title", it.title); set("pi-sev", it.sev || "medium"); set("pi-status", it.status || "open");
+  set("pi-method", it.method); set("pi-url", it.url); set("pi-desc", it.desc); set("pi-evidence", it.evidence);
+  const btn = $("pi-save"); if (btn) btn.textContent = it.id ? "更新 Issue" : "保存 Issue";
+}
+function piRead() {
+  return {
+    title: (($("pi-title") && $("pi-title").value) || "").trim(),
+    sev: ($("pi-sev") && $("pi-sev").value) || "medium",
+    status: ($("pi-status") && $("pi-status").value) || "open",
+    method: (($("pi-method") && $("pi-method").value) || "").trim(),
+    url: (($("pi-url") && $("pi-url").value) || "").trim(),
+    desc: (($("pi-desc") && $("pi-desc").value) || "").trim(),
+    evidence: (($("pi-evidence") && $("pi-evidence").value) || "").trim(),
+  };
+}
+
+// —— 模板：新增 / 运行（建会话并下发） / 删除 ——
 function renderProjTemplates(p) {
   const rows = p.templates || [];
-  projPane("proj-templates", '<div class="tpl-new">'
-    + '<input id="proj-tpl-name" class="text-input" placeholder="模板名称" />'
-    + '<select id="proj-tpl-kind"><option value="dir_scan">目录扫描</option><option value="api_enum">接口枚举</option><option value="inject">注入验证</option><option value="fuzz">参数 Fuzz</option><option value="custom">自定义</option></select>'
-    + '<textarea id="proj-tpl-desc" class="text-input" rows="2" placeholder="说明 / 执行提示（会带进 AI 任务）"></textarea>'
-    + '<button id="proj-tpl-add" class="ctrl-btn">添加模板</button></div>'
-    + (rows.length ? rows.map((t) => `
-      <div class="fact-item">
-        <div class="fact-key">${esc(t.name)} <span class="fact-tag">${esc(t.kind || "custom")}</span></div>
-        <div class="fact-sum">${esc(t.instructions || t.desc || "")}</div>
-        <div class="proj-actions"><button class="mini-btn" data-run-tpl="${esc(t.id)}">运行</button><button class="mini-btn danger" data-del-tpl="${esc(t.id)}">删除</button></div>
-      </div>`).join("") : '<div class="placeholder">暂无模板：常用打法可存成模板，下次一键填进 AI</div>'));
-  const add = $("proj-tpl-add");
-  if (add) add.addEventListener("click", async () => {
-    const name = ($("proj-tpl-name").value || "").trim();
-    if (!name) return toast("模板名称必填");
-    const r = await api("project:template_add", { projectId: p.id, template: {
-      name, kind: $("proj-tpl-kind").value, desc: $("proj-tpl-desc").value || "",
-      instructions: $("proj-tpl-desc").value || "",
-    } });
-    if (!r.ok) return toast("添加失败：" + (r.error || ""));
-    await openProjectDetail(p.id);
-    renderProjectList();
-    toast("模板已添加");
-  });
+  projPane("proj-templates-list", (rows.length ? rows.map((t) => `
+    <div class="fact-item">
+      <div class="fact-key">${esc(t.name)} <span class="fact-tag">${esc(t.kind || "custom")}</span></div>
+      <div class="fact-sum">${esc(t.instructions || t.desc || "")}</div>
+      <div class="proj-actions">
+        <button class="mini-btn" data-run-tpl="${esc(t.id)}">运行</button>
+        <button class="mini-btn danger" data-del-tpl="${esc(t.id)}">删除</button>
+      </div>
+    </div>`).join("") : '<div class="placeholder">暂无模板：把常用打法存成模板，下次一键下发 AI 任务</div>'));
   const box = $("proj-templates");
   if (box) box.querySelectorAll("[data-del-tpl]").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("删除该模板？")) return;
     const r = await api("project:template_remove", { projectId: p.id, templateId: b.dataset.delTpl });
     if (!r.ok) return toast("删除失败：" + (r.error || ""));
-    await openProjectDetail(p.id);
-    renderProjectList();
+    await projRefresh(); renderProjectList();
   }));
-  if (box) box.querySelectorAll("[data-run-tpl]").forEach((b) => b.addEventListener("click", () => {
+  if (box) box.querySelectorAll("[data-run-tpl]").forEach((b) => b.addEventListener("click", async () => {
     const t = rows.find((x) => x.id === b.dataset.runTpl);
     if (!t) return;
     const text = "按项目模板「" + t.name + "」执行：" + (t.instructions || t.desc || "")
       + (t.params && t.params.url ? "\n目标：" + t.params.url : "");
-    switchView("ai");
-    const input = $("ai-input");
-    if (input) { input.value = text; input.focus(); }
-    toast("模板已填入 AI 输入框（选好会话后发送）");
+    await runProjectTask(text, "模板：" + t.name);
   }));
 }
+
+// —— 会话：新建 / 打开 / 解绑 ——
 function renderProjConvs(convs) {
-  projPane("proj-convs", convs.length ? convs.map((c) => `
-    <div class="conv-item" data-conv="${esc(c.convId)}">
+  projPane("proj-convs-list", convs.length ? convs.map((c) => `
+    <div class="proj-conv">
       <div class="pj-name">${esc(c.title || "未命名会话")}</div>
       <div class="pj-meta">消息 ${c.msgCount || 0} · ${new Date(c.updatedAt || Date.now()).toLocaleString()}</div>
-    </div>`).join("") : '<div class="placeholder">该项目还没有会话：在 AI 里新建并「绑定项目」</div>');
+      <div class="proj-actions">
+        <button class="mini-btn" data-conv-open="${esc(c.convId)}">打开</button>
+        <button class="mini-btn" data-conv-unbind="${esc(c.convId)}">解绑</button>
+      </div>
+    </div>`).join("") : '<div class="placeholder">该项目还没有会话：点「新建会话」，或在 AI 里绑定</div>');
   const box = $("proj-convs");
-  if (box) box.querySelectorAll("[data-conv]").forEach((el) => el.addEventListener("click", () => {
-    const c = convs.find((x) => x.convId === el.dataset.conv);
+  if (box) box.querySelectorAll("[data-conv-open]").forEach((el) => el.addEventListener("click", () => {
+    const c = convs.find((x) => x.convId === el.dataset.convOpen);
     if (!c) return;
     switchView("ai");
     openAIDetail({ convId: c.convId, title: c.title, msgCount: c.msgCount, updatedAt: c.updatedAt, type: c.type, projectId: c.projectId });
   }));
+  if (box) box.querySelectorAll("[data-conv-unbind]").forEach((el) => el.addEventListener("click", async () => {
+    if (!confirm("解绑该会话？会话保留，改为独立会话（AI 全局黑板）。")) return;
+    const r = await api("ai:conversation_set_project", { convId: el.dataset.convUnbind, projectId: "" });
+    if (!r.ok) return toast("解绑失败：" + (r.error || ""));
+    await projRefresh(); renderProjectList();
+  }));
 }
+
+// —— 联动：在项目下发起 AI 任务（新建会话 → 打开 → 发送） ——
+async function runProjectTask(text, title) {
+  const p = app.projDetail && app.projDetail.project;
+  if (!p) return toast("请先打开一个项目");
+  const r = await api("ai:conversation_create", { projectId: p.id, title: title || "项目任务" });
+  if (!r.ok) return toast("新建会话失败：" + (r.error || ""));
+  const c = r.conv;
+  switchView("ai");
+  await openAIDetail({ convId: c.convId, title: c.title, msgCount: 0, updatedAt: Date.now(), type: "task", projectId: p.id });
+  const input = $("ai-input");
+  if (!input) return;
+  input.value = text;
+  toast("已在项目会话中下发任务（可随时停止）");
+  await chatSend();
+}
+
+// —— 项目操作 ——
+async function projectExport(id) {
+  const r = await api("project:get", { projectId: id });
+  if (!r.ok) return toast("导出失败：" + (r.error || ""));
+  const data = { exportedAt: new Date().toISOString(), version: 1, project: r.project, conversations: r.conversations };
+  const name = String(r.project.name || "project").replace(/[\\/:*?"<>|]/g, "_");
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "f12x-project-" + name + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+}
+
 function initProjectModule() {
+  const toggle = $("project-new-toggle");
+  if (toggle) toggle.addEventListener("click", () => {
+    const bar = $("project-create-bar");
+    if (bar) bar.classList.toggle("hidden");
+  });
+  const cancel = $("project-create-cancel");
+  if (cancel) cancel.addEventListener("click", () => { const bar = $("project-create-bar"); if (bar) bar.classList.add("hidden"); });
   const create = $("project-create-btn");
   if (create) create.addEventListener("click", async () => {
-    const name = ($("project-name-input").value || "").trim();
+    const name = (($("project-name-input") && $("project-name-input").value) || "").trim();
     if (!name) return toast("请输入项目名称");
-    const r = await api("project:create", { name });
+    const desc = (($("project-desc-input") && $("project-desc-input").value) || "").trim();
+    const r = await api("project:create", { name, desc });
     if (!r.ok) return toast("创建失败：" + (r.error || ""));
-    $("project-name-input").value = "";
+    if ($("project-name-input")) $("project-name-input").value = "";
+    if ($("project-desc-input")) $("project-desc-input").value = "";
+    $("project-create-bar") && $("project-create-bar").classList.add("hidden");
     await api("project:set_active", { projectId: r.project.id });
     await issueRefresh();
     await loadProjects(r.project.id);
     toast("项目已创建并设为当前");
   });
+  const search = $("project-search");
+  if (search) search.addEventListener("input", renderProjectList);
+  const back = $("proj-back");
+  if (back) back.addEventListener("click", () => { showProjectBrowser(); renderProjectList(); });
   const sel = $("project-selector");
   if (sel) sel.addEventListener("change", async () => {
     const id = sel.value;
@@ -1576,6 +1660,8 @@ function initProjectModule() {
     await loadProjects(app.projDetail.project.id);
     toast("已设为当前项目");
   });
+  const exp = $("proj-export");
+  if (exp) exp.addEventListener("click", () => { if (app.projDetail) projectExport(app.projDetail.project.id); });
   const rename = $("proj-rename");
   if (rename) rename.addEventListener("click", async () => {
     if (!app.projDetail) return;
@@ -1593,7 +1679,71 @@ function initProjectModule() {
     const r = await api("project:delete", { projectId: app.projDetail.project.id });
     if (!r.ok) return toast("删除失败：" + (r.error || ""));
     toast("项目已删除（会话已解绑）");
+    app.projDetail = null;
+    showProjectBrowser();
     await loadProjects();
+  });
+  // 黑板新增
+  const factAdd = $("pf-add");
+  if (factAdd) factAdd.addEventListener("click", async () => {
+    const p = app.projDetail && app.projDetail.project;
+    if (!p) return;
+    const key = (($("pf-key") && $("pf-key").value) || "").trim();
+    const sum = (($("pf-sum") && $("pf-sum").value) || "").trim();
+    if (!key || !sum) return toast("key 与内容必填");
+    const r = await api("project:fact_add", { projectId: p.id, key, category: ($("pf-cat") && $("pf-cat").value) || "misc", value: sum });
+    if (!r.ok) return toast("添加失败：" + (r.error || ""));
+    $("pf-key").value = ""; $("pf-sum").value = "";
+    await projRefresh(); renderProjectList();
+    toast("事实已添加");
+  });
+  // Issue 保存 / 清空
+  const piSave = $("pi-save");
+  if (piSave) piSave.addEventListener("click", async () => {
+    const p = app.projDetail && app.projDetail.project;
+    if (!p) return;
+    const f = piRead();
+    if (!f.title || !f.url) return toast("标题与 URL 必填");
+    const r = await api("issue:save", { id: app.projEditIssueId || "", fields: f, projectId: p.id });
+    if (!r.ok) return toast("保存失败：" + (r.error || ""));
+    app.projEditIssueId = null;
+    piFill({ id: "", title: "", sev: "medium", status: "open", method: "", url: "", desc: "", evidence: "" });
+    await projRefresh(); renderProjectList();
+    toast("Issue 已保存到项目");
+  });
+  const piClear = $("pi-clear");
+  if (piClear) piClear.addEventListener("click", () => {
+    app.projEditIssueId = null;
+    piFill({ id: "", title: "", sev: "medium", status: "open", method: "", url: "", desc: "", evidence: "" });
+  });
+  // 模板新增
+  const tplAdd = $("pt-add");
+  if (tplAdd) tplAdd.addEventListener("click", async () => {
+    const p = app.projDetail && app.projDetail.project;
+    if (!p) return;
+    const name = (($("pt-name") && $("pt-name").value) || "").trim();
+    if (!name) return toast("模板名称必填");
+    const url = (($("pt-url") && $("pt-url").value) || "").trim();
+    const r = await api("project:template_add", { projectId: p.id, template: {
+      name, kind: ($("pt-kind") && $("pt-kind").value) || "custom",
+      desc: (($("pt-ins") && $("pt-ins").value) || "").trim(),
+      instructions: (($("pt-ins") && $("pt-ins").value) || "").trim(),
+      params: url ? { url } : {},
+    } });
+    if (!r.ok) return toast("添加失败：" + (r.error || ""));
+    ["pt-name", "pt-url", "pt-ins"].forEach((id) => { if ($(id)) $(id).value = ""; });
+    await projRefresh(); renderProjectList();
+    toast("模板已添加");
+  });
+  // 新建项目会话
+  const newConv = $("proj-new-conv");
+  if (newConv) newConv.addEventListener("click", async () => {
+    const p = app.projDetail && app.projDetail.project;
+    if (!p) return;
+    const r = await api("ai:conversation_create", { projectId: p.id, title: "项目会话" });
+    if (!r.ok) return toast("新建会话失败：" + (r.error || ""));
+    switchView("ai");
+    await openAIDetail({ convId: r.conv.convId, title: r.conv.title, msgCount: 0, updatedAt: Date.now(), type: "task", projectId: p.id });
   });
   loadProjects().catch(() => {});
 }

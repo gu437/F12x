@@ -1667,3 +1667,16 @@ body {
 .fact-sum { font-size: 11px; color: var(--text-2, #444); margin: 3px 0; white-space: pre-wrap; }
 .tpl-new { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .tpl-new select, .tpl-new textarea, .tpl-new input { width: 100%; }
+
+/* 项目页完整布局（P6+） */
+.project-create-bar { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--surface-4); }
+.project-create-bar input { width: 100%; }
+.project-title-block { flex: 1; min-width: 0; }
+.project-actions-row { padding: 0 8px 6px; }
+.pj-desc { color: var(--text-3, #666); font-size: 10px; margin-top: 2px; }
+.proj-conv { border: 1px solid var(--surface-4, #ddd); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+.fact-new, .issue-editor, .tpl-new { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed var(--surface-4, #ddd); }
+.fact-new select, .issue-editor select, .tpl-new select, .fact-new textarea, .issue-editor textarea { width: 100%; }
+.issue-editor .issue-row { display: flex; gap: 6px; }
+.issue-editor .issue-row select { flex: 1; }
+#proj-facts-list, #proj-issues-list, #proj-templates-list, #proj-convs-list { min-height: 40px; }

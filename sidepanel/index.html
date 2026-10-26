@@ -262,22 +262,31 @@
 
         <!-- ===== 站点模块 ===== -->
         <section id="view-project" class="view">
-      <div class="toolbar wrap">
-        <input id="project-name-input" class="text-input flex" placeholder="新建项目名称…（如：客户 A 评估）" />
-        <button id="project-create-btn" class="ctrl-btn primary"><span data-icon="plus" data-size="12"></span> 创建</button>
+      <div id="project-browser">
+        <div class="toolbar wrap">
+          <input id="project-search" class="text-input flex" placeholder="搜索项目…" />
+          <button id="project-new-toggle" class="ctrl-btn primary"><span data-icon="plus" data-size="12"></span> 新建</button>
+        </div>
+        <div id="project-create-bar" class="project-create-bar hidden">
+          <input id="project-name-input" class="text-input" placeholder="项目名称（必填，如：客户 A 评估）" />
+          <input id="project-desc-input" class="text-input" placeholder="描述（可选）" />
+          <div class="proj-actions"><button id="project-create-btn" class="ctrl-btn primary">创建</button><button id="project-create-cancel" class="mini-btn">取消</button></div>
+        </div>
+        <div id="project-list" class="project-list"></div>
       </div>
-      <div id="project-list" class="project-list"></div>
       <div id="project-detail" class="project-detail hidden">
         <div class="project-head">
-          <div>
+          <button id="proj-back" class="mini-btn">← 列表</button>
+          <div class="project-title-block">
             <div id="project-title" class="project-title"></div>
             <div id="project-counts" class="project-counts"></div>
           </div>
-          <div class="proj-actions">
-            <button id="proj-set-active" class="mini-btn">设为当前</button>
-            <button id="proj-rename" class="mini-btn">重命名</button>
-            <button id="proj-delete" class="mini-btn danger">删除</button>
-          </div>
+        </div>
+        <div class="proj-actions project-actions-row">
+          <button id="proj-set-active" class="mini-btn">设为当前</button>
+          <button id="proj-export" class="mini-btn">导出 JSON</button>
+          <button id="proj-rename" class="mini-btn">重命名</button>
+          <button id="proj-delete" class="mini-btn danger">删除</button>
         </div>
         <div class="tabs">
           <button class="tab active" data-ptab="facts">黑板</button>
@@ -285,10 +294,44 @@
           <button class="tab" data-ptab="templates">模板</button>
           <button class="tab" data-ptab="convs">会话</button>
         </div>
-        <div id="proj-facts" class="proj-pane active"></div>
-        <div id="proj-issues" class="proj-pane"></div>
-        <div id="proj-templates" class="proj-pane"></div>
-        <div id="proj-convs" class="proj-pane"></div>
+        <div id="proj-facts" class="proj-pane active">
+          <div class="fact-new">
+            <input id="pf-key" class="text-input" placeholder="key（如 endpoint|/api/login）" />
+            <select id="pf-cat"><option value="endpoint">接口</option><option value="credential">凭据</option><option value="finding">发现</option><option value="chain">利用链</option><option value="repeater">Repeater</option><option value="site">站点</option><option value="misc">其它</option></select>
+            <textarea id="pf-sum" class="text-input" rows="2" placeholder="内容摘要（写清结论 / 参数 / 证据）"></textarea>
+            <button id="pf-add" class="ctrl-btn">添加事实</button>
+          </div>
+          <div id="proj-facts-list"></div>
+        </div>
+        <div id="proj-issues" class="proj-pane">
+          <div class="issue-editor">
+            <input id="pi-title" class="text-input" placeholder="标题（必填）" />
+            <div class="issue-row">
+              <select id="pi-sev"><option value="critical">严重</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option><option value="info">信息</option></select>
+              <select id="pi-status"><option value="open">待处理</option><option value="confirmed">已确认</option><option value="fixed">已修复</option><option value="wontfix">不修复</option></select>
+              <select id="pi-method"><option value="">—</option><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>HEAD</option><option>OPTIONS</option></select>
+            </div>
+            <textarea id="pi-url" class="text-input" rows="2" placeholder="URL / 目标（必填）"></textarea>
+            <textarea id="pi-desc" class="text-input" rows="2" placeholder="描述：影响 / 根因 / 复现步骤"></textarea>
+            <textarea id="pi-evidence" class="text-input" rows="2" placeholder="证据：请求 / 响应 / POC（可选）"></textarea>
+            <div class="proj-actions"><button id="pi-save" class="ctrl-btn">保存 Issue</button><button id="pi-clear" class="mini-btn">清空</button></div>
+          </div>
+          <div id="proj-issues-list"></div>
+        </div>
+        <div id="proj-templates" class="proj-pane">
+          <div class="tpl-new">
+            <input id="pt-name" class="text-input" placeholder="模板名称（必填）" />
+            <select id="pt-kind"><option value="dir_scan">目录扫描</option><option value="api_enum">接口枚举</option><option value="inject">注入验证</option><option value="fuzz">参数 Fuzz</option><option value="custom">自定义</option></select>
+            <input id="pt-url" class="text-input" placeholder="目标 URL（可选）" />
+            <textarea id="pt-ins" class="text-input" rows="2" placeholder="执行提示（会带给 AI）"></textarea>
+            <button id="pt-add" class="ctrl-btn">添加模板</button>
+          </div>
+          <div id="proj-templates-list"></div>
+        </div>
+        <div id="proj-convs" class="proj-pane">
+          <div class="proj-actions"><button id="proj-new-conv" class="ctrl-btn">新建会话</button></div>
+          <div id="proj-convs-list"></div>
+        </div>
       </div>
     </section>
 
