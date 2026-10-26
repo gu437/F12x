@@ -1680,3 +1680,6 @@ body {
 .issue-editor .issue-row { display: flex; gap: 6px; }
 .issue-editor .issue-row select { flex: 1; }
 #proj-facts-list, #proj-issues-list, #proj-templates-list, #proj-convs-list { min-height: 40px; }
+
+/* AI 会话选择弹层 */
+.ai-pick-hint { font-size: 11px; color: var(--text-3, #666); margin: 4px 0 8px; }

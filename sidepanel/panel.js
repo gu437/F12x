@@ -1474,14 +1474,11 @@ function renderProjFacts(p) {
     if (!r.ok) return toast("删除失败：" + (r.error || ""));
     await projRefresh(); renderProjectList();
   }));
-  if (box) box.querySelectorAll("[data-fact-ai]").forEach((b) => b.addEventListener("click", () => {
+  if (box) box.querySelectorAll("[data-fact-ai]").forEach((b) => b.addEventListener("click", async () => {
     const f = rows.find((x) => x.key === b.dataset.factAi);
     if (!f) return;
     const text = "[项目黑板] " + f.key + "（" + (f.category || "misc") + "）：" + (f.summary || "");
-    switchView("ai");
-    const input = $("ai-input");
-    if (input) { input.value = text; input.focus(); }
-    toast("已填入 AI 输入框");
+    await aiSendFromPage(text, "项目黑板：" + f.key, true);
   }));
 }
 
@@ -2829,31 +2826,66 @@ async function chatSendGuard() {
   }
 }
 
-// 页面 / 脚本 → AI 统一入口：先落到一条可见会话，再填输入框 / 发送
-// （旧实现走一次性 ai:chat，回复只进底部状态条，用户找不到）
-async function aiSendFromPage(text, title, autoSend = true) {
+// 页面 / 脚本 / 项目事实 → AI：先让用户选会话（或新建），再投递
+// （不再自动决定会话；旧实现走一次性 ai:chat，回复只进底部状态条）
+async function aiSendFromPage(text, titleHint = "页面分析", autoSend = true) {
   const body = String(text || "").trim();
   if (!body) return;
-  let convId = (chatUI.open && chatUI.convId) || "";
-  const projectId = (app.currentProject && app.currentProject.id) || null;
-  if (!convId) {
-    const r = await api("ai:conversation_create", { projectId, title: String(title || "页面分析").substring(0, 40) });
-    if (!r.ok) return toast("新建会话失败：" + (r.error || ""));
-    convId = r.conv.convId;
-    switchView("ai");
-    await openAIDetail({ convId, title: r.conv.title, msgCount: 0, updatedAt: Date.now(), type: "task", projectId });
-  } else {
-    switchView("ai");
+  return pickConversationForAI({ text: body, titleHint, autoSend });
+}
+
+async function pickConversationForAI({ text, titleHint = "页面分析", autoSend = true }) {
+  const r = await api("ai:conversations");
+  const list = r.ok ? (r.conversations || []) : [];
+  const pid = (app.currentProject && app.currentProject.id) || "";
+  const pname = (app.currentProject && app.currentProject.name) || "未绑定项目";
+  const opts = list.map((c) => `<option value="${esc(c.convId)}">${esc(c.title || "未命名")} · ${c.projectId ? "项目" : "独立"} · ${c.msgCount || 0} 条</option>`).join("");
+  openModal(`<h3>送到哪个会话？</h3>
+    <div class="ai-pick-hint">选已有会话，或新建（新会话会绑定当前项目「${esc(pname)}」）</div>
+    <select id="ap-conv">
+      <option value="__new__">＋ 新建会话（绑定当前项目）</option>
+      ${opts}
+    </select>
+    <input id="ap-title" class="text-input hidden" placeholder="新会话标题（可选）" value="${esc(titleHint)}" />
+    <label class="mini-inline"><input type="checkbox" id="ap-send" ${autoSend ? "checked" : ""}/> 立即发送（不勾则只填入输入框）</label>
+    <div class="modal-actions"><button id="ap-cancel">取消</button><button id="ap-ok" class="primary">确定</button></div>`);
+  const sel = $("ap-conv");
+  const titleEl = $("ap-title");
+  const sync = () => { if (titleEl) titleEl.classList.toggle("hidden", sel.value !== "__new__"); };
+  sel.addEventListener("change", sync);
+  sync();
+  $("ap-cancel").addEventListener("click", closeModal);
+  $("ap-ok").addEventListener("click", async () => {
+    const send = !!($("ap-send") && $("ap-send").checked);
+    const val = sel.value;
+    const title = ((titleEl && titleEl.value) || "").trim() || titleHint;
+    closeModal();
+    if (val === "__new__") {
+      const cr = await api("ai:conversation_create", { projectId: pid || null, title: title.substring(0, 40) });
+      if (!cr.ok) return toast("新建会话失败：" + (cr.error || ""));
+      await deliverToConversation({ convId: cr.conv.convId, title: cr.conv.title, projectId: pid || null, msgCount: 0, updatedAt: Date.now(), type: "task" }, text, send);
+    } else {
+      const c = list.find((x) => x.convId === val);
+      if (!c) return toast("会话不存在");
+      await deliverToConversation(c, text, send);
+    }
+  });
+}
+
+async function deliverToConversation(c, text, autoSend) {
+  switchView("ai");
+  if (!(chatUI.open && chatUI.convId === c.convId)) {
+    await openAIDetail({ convId: c.convId, title: c.title, msgCount: c.msgCount, updatedAt: c.updatedAt, type: c.type, projectId: c.projectId });
   }
   const input = $("ai-input");
-  if (input) { input.value = body; input.focus(); }
+  if (input) { input.value = text; input.focus(); }
   const st = await api("util:get_state");
   if (!(st.ok && st.state && st.state.llmConfigured)) {
-    toast("未配置模型：内容已填入当前会话输入框");
+    toast("未配置模型：内容已填入所选会话输入框");
     return;
   }
-  if (autoSend) { await chatSend(); }
-  else toast("已填入 AI 输入框");
+  if (autoSend) await chatSend();
+  else toast("已填入所选会话输入框");
 }
 
 // 发送：进入 busy，等后端实时事件把气泡补齐
