@@ -91,9 +91,9 @@
             <button id="net-refresh-btn" class="ctrl-btn" title="刷新列表"><span data-icon="refresh-cw" data-size="12"></span></button>
           </div>
           <!-- 过滤条 -->
-          <div class="toolbar wrap">
-            <input id="net-filter" class="text-input flex" placeholder="URL 正则过滤…" />
-            <input id="net-search" class="text-input flex" placeholder="元数据搜索（URL/请求头/响应头）…" />
+          <div class="toolbar wrap net-filters">
+            <input id="net-filter" class="text-input flex" placeholder="URL 正则…" />
+            <input id="net-search" class="text-input flex" placeholder="搜索 URL / 头 / 体…" />
             <select id="net-filter-method" class="select-mini">
               <option value="">方法</option><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>OPTIONS</option>
             </select>
@@ -297,9 +297,9 @@
         <div id="proj-facts" class="proj-pane active">
           <div class="fact-new">
             <input id="pf-key" class="text-input" placeholder="key（如 endpoint|/api/login）" />
-            <select id="pf-cat"><option value="endpoint">接口</option><option value="credential">凭据</option><option value="finding">发现</option><option value="chain">利用链</option><option value="repeater">Repeater</option><option value="site">站点</option><option value="misc">其它</option></select>
+            <select id="pf-cat" class="select-mini"><option value="endpoint">接口</option><option value="credential">凭据</option><option value="finding">发现</option><option value="chain">利用链</option><option value="repeater">Repeater</option><option value="site">站点</option><option value="misc">其它</option></select>
             <textarea id="pf-sum" class="text-input" rows="2" placeholder="内容摘要（写清结论 / 参数 / 证据）"></textarea>
-            <button id="pf-add" class="ctrl-btn">添加事实</button>
+            <button id="pf-add" class="ctrl-btn primary">添加事实</button>
           </div>
           <div id="proj-facts-list"></div>
         </div>
@@ -307,24 +307,24 @@
           <div class="issue-editor">
             <input id="pi-title" class="text-input" placeholder="标题（必填）" />
             <div class="issue-row">
-              <select id="pi-sev"><option value="critical">严重</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option><option value="info">信息</option></select>
-              <select id="pi-status"><option value="open">待处理</option><option value="confirmed">已确认</option><option value="fixed">已修复</option><option value="wontfix">不修复</option></select>
-              <select id="pi-method"><option value="">—</option><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>HEAD</option><option>OPTIONS</option></select>
+              <select id="pi-sev" class="select-mini"><option value="critical">严重</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option><option value="info">信息</option></select>
+              <select id="pi-status" class="select-mini"><option value="open">待处理</option><option value="confirmed">已确认</option><option value="fixed">已修复</option><option value="wontfix">不修复</option></select>
+              <select id="pi-method" class="select-mini"><option value="">—</option><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>HEAD</option><option>OPTIONS</option></select>
             </div>
             <textarea id="pi-url" class="text-input" rows="2" placeholder="URL / 目标（必填）"></textarea>
             <textarea id="pi-desc" class="text-input" rows="2" placeholder="描述：影响 / 根因 / 复现步骤"></textarea>
             <textarea id="pi-evidence" class="text-input" rows="2" placeholder="证据：请求 / 响应 / POC（可选）"></textarea>
-            <div class="proj-actions"><button id="pi-save" class="ctrl-btn">保存 Issue</button><button id="pi-clear" class="mini-btn">清空</button></div>
+            <div class="proj-actions"><button id="pi-save" class="ctrl-btn primary">保存 Issue</button><button id="pi-clear" class="mini-btn">清空</button></div>
           </div>
           <div id="proj-issues-list"></div>
         </div>
         <div id="proj-templates" class="proj-pane">
           <div class="tpl-new">
             <input id="pt-name" class="text-input" placeholder="模板名称（必填）" />
-            <select id="pt-kind"><option value="dir_scan">目录扫描</option><option value="api_enum">接口枚举</option><option value="inject">注入验证</option><option value="fuzz">参数 Fuzz</option><option value="custom">自定义</option></select>
+            <select id="pt-kind" class="select-mini"><option value="dir_scan">目录扫描</option><option value="api_enum">接口枚举</option><option value="inject">注入验证</option><option value="fuzz">参数 Fuzz</option><option value="custom">自定义</option></select>
             <input id="pt-url" class="text-input" placeholder="目标 URL（可选）" />
             <textarea id="pt-ins" class="text-input" rows="2" placeholder="执行提示（会带给 AI）"></textarea>
-            <button id="pt-add" class="ctrl-btn">添加模板</button>
+            <button id="pt-add" class="ctrl-btn primary">添加模板</button>
           </div>
           <div id="proj-templates-list"></div>
         </div>
