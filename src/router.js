@@ -17,7 +17,7 @@ import {
   debuggerAttach, debuggerDetach, get_page_skeleton, eval_js, search_dom,
   get_network_requests, get_network_request_detail, get_console_logs,
   get_cookies, get_script_list, get_script_content, search_scripts, sendCDP,
-  navigate, highlight_element, screenshot, formRecon, capture_identity_state, replay_batch_with_identity,
+  navigate, highlight_element, screenshot, formRecon, capture_identity_state, replay_batch_with_identity, replay_request,
   inspectEnable, inspectDisable, interceptSetMode, interceptAction, interceptReleaseAll,
   metadataSearch, collectElementCodeBySelector
 } from "./debugger.js";
@@ -33,6 +33,7 @@ import { saveEvidence, listEvidence, getEvidence, removeEvidence, markEvidenceIs
 import { saveIdentity, listIdentities, getIdentity, removeIdentity } from "./identity.js";
 import { extractRefs, applyRef, valuesFromText, candidatesFor } from "./mutate.js";
 import { classifyCell } from "./matrix.js";
+import { saveSequence, listSequences, getSequence, removeSequence, applyVars, unresolvedVars, extractVar } from "./sequence.js";
 
 // 持久数据必须落在项目里：没有项目就明确报错（项目只在项目页创建）
 async function requireActiveProjectId(explicitId) {
@@ -501,6 +502,91 @@ export function handleMessage(message, sender, sendResponse) {
       try {
         const p = await ensureActiveProject();
         sendResponse({ ok: true, project: p ? { id: p.id, name: p.name } : null, issues: p ? (p.issues || []) : [] });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "sequence:list") {
+    (async () => {
+      try {
+        const pid = message.projectId || await requireActiveProjectId();
+        const res = await listSequences(pid || null);
+        sendResponse({ ok: true, ...res });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "sequence:get") {
+    (async () => {
+      try {
+        const seq = await getSequence(message.id);
+        if (!seq) return sendResponse({ ok: false, error: "序列不存在", code: "NOT_FOUND" });
+        sendResponse({ ok: true, sequence: seq });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "sequence:save") {
+    (async () => {
+      try {
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目（序列必须归属项目）", code: "NOT_FOUND" });
+        const res = await saveSequence({ ...message, projectId: pid });
+        if (res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
+        sendResponse({ ok: true, id: res.id, meta: res.meta });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "sequence:remove") {
+    (async () => {
+      try { await removeSequence(message.id); sendResponse({ ok: true }); }
+      catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "sequence:run") {
+    (async () => {
+      try {
+        const seq = await getSequence(message.id);
+        if (!seq) return sendResponse({ ok: false, error: "序列不存在", code: "NOT_FOUND" });
+        await debuggerAttach().catch(() => {});
+        const vars = { ...(message.variables || {}) };
+        const out = [];
+        for (const step of seq.steps || []) {
+          const url = applyVars(step.url, vars);
+          const body = step.body == null ? null : applyVars(step.body, vars);
+          const headers = {};
+          for (const [k, v] of Object.entries(step.headers || {})) headers[applyVars(k, vars)] = applyVars(v, vars);
+          const missing = unresolvedVars(url + "\n" + (body || "") + "\n" + JSON.stringify(headers));
+          if (missing.length) {
+            out.push({ id: step.id, name: step.name, status: null, length: 0, error: "未解析变量: " + missing.join(", "), extracted: {} });
+            if (step.stopOnError !== false) break;
+            continue;
+          }
+          const idn = step.identityId ? await getIdentity(step.identityId) : null;
+          if (step.identityId && !idn) {
+            out.push({ id: step.id, name: step.name, status: null, length: 0, error: "身份不存在: " + step.identityId, extracted: {} });
+            if (step.stopOnError !== false) break;
+            continue;
+          }
+          const res = await replay_request({ url, method: step.method, headers, body, identity: idn });
+          const extracted = {};
+          for (const rule of step.extract || []) {
+            if (!rule.name) continue;
+            const v = extractVar(rule.from === "header" ? (res.responseHeaders || {}) : (res.body || ""), rule);
+            if (v !== "") { extracted[rule.name] = v; vars[rule.name] = v; }
+          }
+          out.push({
+            id: step.id, name: step.name, url, method: step.method,
+            status: res.status ?? null, length: res.body ? String(res.body).length : 0,
+            body: res.body ? String(res.body).slice(0, 65536) : "",
+            headers: res.responseHeaders || {}, request: { url, method: step.method, headers, body },
+            extracted, error: res.error || "",
+          });
+          if (res.error && step.stopOnError !== false) break;
+        }
+        sendResponse({ ok: true, steps: out, vars, name: seq.name });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;

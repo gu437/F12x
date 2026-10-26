@@ -180,7 +180,7 @@ const app = {
     columns: ["method", "status", "url"], // 默认只看标识列；类型/大小/来源在详情「常规」
     consoleLogs: []
   },
-  rep: { lastResponse: null, history: [], prevBody: "", identityId: "" }, matrix: { refs: [], template: null, result: null, selected: null },
+  rep: { lastResponse: null, history: [], prevBody: "", identityId: "" }, matrix: { refs: [], template: null, result: null, selected: null }, seqDraft: null, seqResult: null, seqIdentityOptions: "",
   jsHistory: [],
   currentView: "page",
   aiRunning: false,
@@ -1368,6 +1368,200 @@ function renderMatrixResult(r) {
   }));
 }
 
+// ============================================================
+// ===== 序列（方案 009 / P4：多步 + 变量提取） =====
+// ============================================================
+function seqProjectId() {
+  if (app.projDetail && app.projDetail.project) return app.projDetail.project.id;
+  return identityProjectId();
+}
+
+async function renderProjSequences(p) {
+  if (!p) return;
+  const r = await api("sequence:list", { projectId: p.id });
+  const rows = r.ok ? (r.sequences || []) : [];
+  projPane("proj-sequences-list", `<div class="proj-actions"><button id="seq-new" class="ctrl-btn primary">新建序列</button></div>`
+    + (rows.length ? rows.map((s) => `
+      <div class="ev-card">
+        <div class="ev-card-top"><span class="ev-card-title">${esc(s.name)}</span><span class="ev-card-status">${s.stepCount} 步</span></div>
+        <div class="ev-card-meta">${new Date(s.updatedAt || 0).toLocaleString()}</div>
+        <div class="ev-card-actions"><button class="mini-btn" data-seq-run="${esc(s.id)}">运行</button><button class="mini-btn" data-seq-edit="${esc(s.id)}">编辑</button><button class="mini-btn danger" data-seq-del="${esc(s.id)}">删除</button></div>
+      </div>`).join("") : '<div class="placeholder">暂无序列：在 Repeater 点「加入序列」把请求加进来</div>'));
+  const box = $("proj-sequences-list");
+  if (!box) return;
+  if ($("seq-new")) $("seq-new").addEventListener("click", () => openSequenceEditor(""));
+  box.querySelectorAll("[data-seq-run]").forEach((b) => b.addEventListener("click", () => runSequence(b.dataset.seqRun)));
+  box.querySelectorAll("[data-seq-edit]").forEach((b) => b.addEventListener("click", () => openSequenceEditor(b.dataset.seqEdit)));
+  box.querySelectorAll("[data-seq-del]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("删除该序列？")) return;
+    const rr = await api("sequence:remove", { id: b.dataset.seqDel });
+    if (!rr.ok) return toast("删除失败：" + (rr.error || ""));
+    renderProjSequences(p);
+  }));
+}
+
+async function seqIdentityOptions(selected) {
+  const r = await api("identity:list", { projectId: seqProjectId() });
+  const rows = r.ok ? (r.identities || []) : [];
+  return '<option value="">当前会话</option>' + rows.map((x) => `<option value="${esc(x.id)}"${x.id === selected ? " selected" : ""}>${esc(x.name)}</option>`).join("");
+}
+
+async function openSequenceEditor(id) {
+  const r = id ? await api("sequence:get", { id }) : { ok: true, sequence: { name: "新序列", steps: [] } };
+  if (!r.ok) return toast("读取失败：" + (r.error || ""));
+  app.seqDraft = JSON.parse(JSON.stringify(r.sequence));
+  app.seqDraft.steps = app.seqDraft.steps || [];
+  const ids = await seqIdentityOptions("");
+  app.seqIdentityOptions = ids;
+  openModal(`<h3>${id ? "编辑序列" : "新建序列"}</h3>
+    <label>名称</label><input id="seq-name" class="text-input" value="${esc(app.seqDraft.name || "")}" />
+    <div id="seq-steps" class="seq-steps"></div>
+    <div class="proj-actions"><button id="seq-save" class="ctrl-btn primary">保存序列</button><span class="mini-label">步骤从 Repeater「加入序列」添加</span></div>
+    <div class="modal-actions"><button id="seq-cancel">关闭</button></div>`);
+  const box = document.querySelector(".modal-box");
+  if (!box) return;
+  renderSeqSteps();
+  $("seq-cancel").addEventListener("click", () => { closeModal(); if (app.projDetail) renderProjSequences(app.projDetail.project); });
+  $("seq-save").addEventListener("click", async () => {
+    const pid = seqProjectId();
+    if (!pid) return toast("请先选择项目");
+    const name = ($("seq-name").value || "").trim();
+    if (!name) return toast("序列名称必填");
+    const rr = await api("sequence:save", { projectId: pid, id: app.seqDraft.id || "", name, steps: app.seqDraft.steps });
+    if (!rr.ok) return toast("保存失败：" + (rr.error || ""));
+    closeModal();
+    toast("序列已保存");
+    if (app.projDetail) renderProjSequences(app.projDetail.project);
+  });
+}
+
+function renderSeqSteps() {
+  const box = $("seq-steps");
+  if (!box) return;
+  if (!app.seqDraft.steps.length) {
+    box.innerHTML = '<div class="placeholder">还没有步骤：关闭后在 Repeater 填好请求，点「加入序列」</div>';
+    return;
+  }
+  box.innerHTML = app.seqDraft.steps.map((s, i) => `
+    <div class="seq-step" data-step="${i}">
+      <div class="seq-step-head"><span>${i + 1}. ${esc(s.method || "GET")} ${esc(s.url || "")}</span><button class="mini-btn danger" data-seq-step-del="${i}">移除</button></div>
+      <div class="seq-row"><label class="mini-label">身份</label><select class="select-mini" data-seq-id="${i}">${app.seqIdentityOptions}</select></div>
+      <div class="seq-extract" data-seq-extract="${i}">
+        ${(s.extract || []).map((e, j) => `
+          <div class="seq-extract-row">
+            <input class="text-input" data-ext-name="${i}:${j}" placeholder="变量名" value="${esc(e.name || "")}" />
+            <select class="select-mini" data-ext-from="${i}:${j}"><option value="body"${e.from !== "header" ? " selected" : ""}>body</option><option value="header"${e.from === "header" ? " selected" : ""}>header</option></select>
+            <input class="text-input" data-ext-path="${i}:${j}" placeholder="data.token / 正则" value="${esc(e.path || "")}" />
+            <button class="mini-btn danger" data-ext-del="${i}:${j}">×</button>
+          </div>`).join("")}
+        <button class="mini-btn" data-ext-add="${i}">+ 提取变量</button>
+      </div>
+    </div>`).join("");
+  // identity select：保留当前草稿值（HTML 已含选项，但 selected 来自初始快照，单独设置）
+  box.querySelectorAll("[data-seq-id]").forEach((sel) => {
+    const i = Number(sel.dataset.seqId);
+    sel.value = app.seqDraft.steps[i].identityId || "";
+    sel.addEventListener("change", () => { app.seqDraft.steps[i].identityId = sel.value; });
+  });
+  box.querySelectorAll("[data-seq-step-del]").forEach((b) => b.addEventListener("click", () => {
+    app.seqDraft.steps.splice(Number(b.dataset.seqStepDel), 1);
+    renderSeqSteps();
+  }));
+  box.querySelectorAll("[data-ext-add]").forEach((b) => b.addEventListener("click", () => {
+    const i = Number(b.dataset.extAdd);
+    app.seqDraft.steps[i].extract = app.seqDraft.steps[i].extract || [];
+    app.seqDraft.steps[i].extract.push({ name: "token", from: "body", path: "token", regex: "" });
+    renderSeqSteps();
+  }));
+  box.querySelectorAll("[data-ext-del]").forEach((b) => b.addEventListener("click", () => {
+    const [i, j] = b.dataset.extDel.split(":").map(Number);
+    app.seqDraft.steps[i].extract.splice(j, 1);
+    renderSeqSteps();
+  }));
+  const bind = (attr, setter) => box.querySelectorAll(`[data-${attr}]`).forEach((el) => {
+    const [i, j] = el.dataset[attr.replace(/-([a-z])/g, (m, c) => c.toUpperCase())].split(":").map(Number);
+    el.addEventListener("input", () => setter(app.seqDraft.steps[i].extract[j], el.value));
+  });
+  bind("ext-name", (e, v) => { e.name = v; });
+  bind("ext-path", (e, v) => { e.path = v; });
+  box.querySelectorAll("[data-ext-from]").forEach((el) => {
+    const [i, j] = el.dataset.extFrom.split(":").map(Number);
+    el.addEventListener("change", () => { app.seqDraft.steps[i].extract[j].from = el.value; });
+  });
+}
+
+async function addToSequenceDialog() {
+  const tpl = matrixTemplate();
+  if (!tpl.url) return toast("先填 URL");
+  const pid = seqProjectId();
+  if (!pid) return toast("请先选择项目");
+  const r = await api("sequence:list", { projectId: pid });
+  const rows = r.ok ? (r.sequences || []) : [];
+  openModal(`<h3>加入序列</h3>
+    <label>追加到</label>
+    <select id="seq-target" class="select-mini"><option value="">新建序列…</option>${rows.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}（${s.stepCount} 步）</option>`).join("")}</select>
+    <label>新序列名称</label><input id="seq-new-name" class="text-input" placeholder="如 越权链" />
+    <div class="modal-actions"><button id="seq-add-cancel">取消</button><button id="seq-add-ok" class="primary">加入</button></div>`);
+  const box = document.querySelector(".modal-box");
+  box.querySelector("#seq-add-cancel").addEventListener("click", closeModal);
+  box.querySelector("#seq-add-ok").addEventListener("click", async () => {
+    const target = $("seq-target").value;
+    let seq;
+    if (target) {
+      const rr = await api("sequence:get", { id: target });
+      if (!rr.ok) return toast("读取序列失败：" + (rr.error || ""));
+      seq = rr.sequence;
+    } else {
+      const name = ($("seq-new-name").value || "").trim();
+      if (!name) return toast("新序列名称必填");
+      seq = { name, steps: [] };
+    }
+    seq.steps = seq.steps || [];
+    seq.steps.push({ name: "步骤 " + (seq.steps.length + 1), ...tpl });
+    const rr = await api("sequence:save", { projectId: pid, id: seq.id || "", name: seq.name, steps: seq.steps });
+    if (!rr.ok) return toast("保存失败：" + (rr.error || ""));
+    closeModal();
+    toast("已加入序列");
+    if (app.projDetail) renderProjSequences(app.projDetail.project);
+  });
+}
+
+async function runSequence(id) {
+  const seqR = await api("sequence:get", { id });
+  if (!seqR.ok) return toast("读取序列失败：" + (seqR.error || ""));
+  const seq = seqR.sequence;
+  if (!seq.steps || !seq.steps.length) return toast("序列没有步骤");
+  const variables = {};
+  for (const step of seq.steps) {
+    const m = String(step.url || "").match(/\{\{\s*([\w.-]+)\s*\}\}/g) || [];
+    for (const x of m) variables[x.replace(/[{}\s]/g, "")] = "";
+  }
+  const r = await api("sequence:run", { id, variables });
+  if (!r.ok) return toast("运行失败：" + (r.error || ""));
+  app.seqResult = r;
+  openModal(`<h3>序列运行 · ${esc(r.name || seq.name)}</h3>
+    <div class="seq-run-table">${(r.steps || []).map((s, i) => `
+      <div class="seq-run-row ${s.error ? "err" : ""}">
+        <div class="seq-run-head"><b>${i + 1}. ${esc(s.name || "")}</b> <span>${s.error ? "ERR" : esc(String(s.status))} · ${s.length}B</span></div>
+        <div class="seq-run-meta">${esc(s.url || "")}</div>
+        ${Object.keys(s.extracted || {}).length ? '<div class="seq-run-meta">提取：' + Object.entries(s.extracted).map(([k, v]) => k + "=" + v).join(" · ") + "</div>" : ""}
+        ${s.error ? '<div class="seq-run-err">' + esc(s.error) + "</div>" : ""}
+        <div class="proj-actions"><button class="mini-btn" data-seq-ev="${i}">存证据</button></div>
+      </div>`).join("")}</div>
+    <div class="modal-actions"><button id="seq-run-close" class="primary">关闭</button></div>`);
+  const box = document.querySelector(".modal-box");
+  box.querySelector("#seq-run-close").addEventListener("click", closeModal);
+  box.querySelectorAll("[data-seq-ev]").forEach((b) => b.addEventListener("click", () => {
+    const s = r.steps[Number(b.dataset.seqEv)];
+    evidenceSaveDialog({
+      kind: "sequence-step", source: "sequence",
+      title: `序列 ${s.name || ""} → ${s.status ?? "ERR"}`,
+      request: s.request || { method: s.method, url: s.url, headers: {}, body: null },
+      response: { status: s.status, headers: s.headers || {}, body: s.body || "" },
+    });
+  }));
+}
+
 function initRequestModule() {
   document.querySelectorAll('#view-request .tabs .tab').forEach(t => {
     t.addEventListener("click", () => {
@@ -1381,6 +1575,7 @@ function initRequestModule() {
   if ($("rep-identity")) $("rep-identity").addEventListener("change", () => { app.rep.identityId = $("rep-identity").value; });
   if ($("rep-identity-manage")) $("rep-identity-manage").addEventListener("click", openIdentityManager);
   if ($("rep-matrix")) $("rep-matrix").addEventListener("click", openMatrixDialog);
+  if ($("rep-to-seq")) $("rep-to-seq").addEventListener("click", addToSequenceDialog);
   refreshIdentitySelect().catch(() => {});
   if ($("rep-evidence")) $("rep-evidence").addEventListener("click", saveRepeaterEvidence);
   // Repeater 历史存到项目黑板
@@ -2105,6 +2300,7 @@ async function openProjectDetail(id) {
   renderProjFacts(p);
   renderProjIssues(p);
   renderProjTemplates(p);
+  renderProjSequences(p);
   renderProjEvidence(p);
   renderProjConvs(r.conversations);
   renderProjectList();
