@@ -27,6 +27,11 @@
 
 ## 未发布
 
+### 2026-10-26 · feat：项目视图与当前项目切换（方案 001 / P6）
+- 改了什么：新增「项目」视图（列表 + 页签详情：黑板 / Issue / 模板 / 会话）+ 顶栏项目选择器；后台补 `project:get` / `project:set_active` / `project:fact_remove` / `project:template_add` / `project:template_remove`，`issue:save/delete` 支持显式 `projectId`；删除项目只删黑板 / Issue / 模板，会话解绑保留。
+- 为什么：项目已是唯一持久化容器，但没有界面入口；用户需要一个地方统一看/管黑板、Issue、模板、会话，并切换当前项目。
+- 验证：`dev/run.mjs` 63/63（新增项目视图检查）；真实 UI：列表 2 项、详情四页签计数正确、新建后 3 项、0 `pageerror`；截图 `docs/images/20-project.png`。
+- 提交：`c4cf11f`
 ### 2026-10-26 · feat：AI 会话截图引用化（方案 001 / P5）
 - 改了什么：`screenshot` 不再写全局 5 张池，改为按会话 `shot:<convId>:<key>` + `shot_index:<convId>`（无数量上限）；AI 截图写入会话并记 `conv.shots`，模型只拿到引用 key；会话里渲染「📎 截图引用」，点击弹层看原图并可导出 PNG；删除会话级联删图。
 - 为什么：全局 5 张池既限制数量、又和会话无归属；按会话存引用后，图片不占对话上下文、可以无限留存、删会话即彻底清理。
