@@ -1757,7 +1757,7 @@ function initAIModule() {
   document.querySelectorAll("#ai-detail .ai-detail-tabs .tab").forEach(t => t.addEventListener("click", () => setAIDetailTab(t.dataset.aiTab)));
   $("ai-back").addEventListener("click", closeAIDetail);
   $("ai-new-conv").addEventListener("click", newConversationFlow);
-  $("ai-new-project").addEventListener("click", newProjectFlow);
+  $("ai-new-project").addEventListener("click", () => switchView("project")); // 项目统一在「项目」页创建/管理
   $("ai-set-project").addEventListener("click", setConversationProject);
   $("ai-rename-btn").addEventListener("click", () => aiDetailConv && renameConversationFlow(aiDetailConv));
   $("ai-del-btn").addEventListener("click", () => aiDetailConv && deleteConversationFlow(aiDetailConv));
@@ -3517,7 +3517,7 @@ async function renderAISessions() {
   await loadAIProjects();
   if (!r.ok) { pane.innerHTML = `<div class="placeholder">加载失败：${esc(r.error)}</div>`; return; }
   const convs = r.conversations || [];
-  if (!convs.length) { pane.innerHTML = '<div class="placeholder">暂无会话（AI 任务/聊天结束后自动记录在此）</div>'; return; }
+  if (!convs.length) { pane.innerHTML = '<div class="placeholder">暂无会话（AI 任务/聊天结束后自动记录在此；项目在「项目」页创建）</div>'; return; }
   // 按项目分组：项目 → 其下绑定的会话；未绑定的归入"独立会话"组
   const groupBy = (id) => convs.filter(c => (c.projectId || null) === id);
   const bound = (aiProjects.length ? aiProjects : []).map(p => ({ project: p, convs: groupBy(p.id) })).filter(g => g.convs.length);
@@ -3619,61 +3619,6 @@ async function newConversationFlow() {
     }
     else toast("创建失败：" + (r.error || ""));
   });
-}
-
-// 新建项目（含已有项目管理：重命名/删除）
-async function newProjectFlow() {
-  const projects = await loadAIProjects();
-  openModal(`<h3>新建项目</h3>
-    <label>项目名称</label><input id="np-name" placeholder="例如：渗透测试项目" />
-    <label>描述（可选）</label><input id="np-desc" placeholder="一句话描述" />
-    <div class="modal-actions"><button>取消</button><button id="np-ok" class="primary">创建</button></div>
-    <hr style="margin:10px 0;border:none;border-top:1px solid var(--surface-4)">
-    <label>已有项目（黑板跨会话共享）</label>
-    <div class="ai-proj-list">${projects.map(p => `
-      <div class="ai-proj-item" data-id="${esc(p.id)}">
-        <div class="ai-proj-info">
-          <span class="ai-proj-name">📁 ${esc(p.name)}</span>
-          <span class="ai-proj-meta">${p.factsCount} 事实 · ${new Date(p.createdAt).toLocaleDateString()}</span>
-        </div>
-        <span class="ai-proj-actions">
-          <button class="mini-btn" data-act="rename">重命名</button>
-          <button class="mini-btn" data-act="del">删除</button>
-        </span>
-      </div>`).join("") || '<div class="placeholder" style="padding:8px 0">暂无项目</div>'}
-    </div>`);
-  const box = document.querySelector(".modal-box");
-  box.querySelector(".modal-actions button").addEventListener("click", closeModal);
-  box.querySelector("#np-ok").addEventListener("click", async () => {
-    const name = $("np-name").value.trim();
-    if (!name) { toast("请输入项目名称"); return; }
-    const r = await api("project:create", { name, desc: $("np-desc").value.trim() });
-    closeModal();
-    if (r.ok) { toast("项目已创建"); await loadAIProjects(); }
-    else toast("创建失败：" + (r.error || ""));
-  });
-  box.querySelectorAll(".ai-proj-item").forEach(el => el.addEventListener("click", async (e) => {
-    const id = el.dataset.id;
-    const act = e.target.closest("[data-act]")?.dataset.act;
-    if (act === "del") {
-      const r = await api("project:delete", { projectId: id });
-      closeModal();
-      if (r.ok) { toast("已删除项目（会话解绑）"); await loadAIProjects(); }
-      else toast("删除失败：" + (r.error || ""));
-    } else if (act === "rename") {
-      const p = aiProjects.find(x => x.id === id);
-      openModal(`<h3>重命名项目</h3><label>名称</label><input id="rn-name" value="${esc(p?.name || "")}" />
-        <div class="modal-actions"><button>取消</button><button id="rn-ok" class="primary">保存</button></div>`);
-      const b2 = document.querySelector(".modal-box");
-      b2.querySelector(".modal-actions button").addEventListener("click", closeModal);
-      b2.querySelector("#rn-ok").addEventListener("click", async () => {
-        const r2 = await api("project:rename", { projectId: id, name: $("rn-name").value.trim() });
-        closeModal();
-        if (r2.ok) { await loadAIProjects(); }
-        else toast("重命名失败：" + (r2.error || ""));
-      });
-    }
-  }));
 }
 
 // 会话绑定/解绑项目（详情头按钮）

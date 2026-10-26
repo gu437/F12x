@@ -69,6 +69,7 @@ export async function listProjects() {
   const convCount = {};
   for (const c of convs) if (c.projectId) convCount[c.projectId] = (convCount[c.projectId] || 0) + 1;
   return index
+    .filter((m) => m.id !== AI_PROJECT_ID) // AI 内部全局黑板不算用户项目
     .map((m) => ({ ...m, convCount: convCount[m.id] || 0 }))
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
@@ -857,8 +858,9 @@ export async function setActiveProjectId(projectId) {
   else await chrome.storage.local.remove(ACTIVE_PROJECT_KEY);
 }
 
-// 取当前项目；没有就取第一个；一个都没有就建「默认项目」
-export async function ensureActiveProject() {
+// 取当前项目：没有就取第一个；一个都没有返回 null（除非显式 create）
+// 取当前项目：不存在就取第一个；一个都没有返回 null（不自动创建——项目只在项目页显式创建）
+export async function ensureActiveProject({ create = false } = {}) {
   const activeId = await getActiveProjectId();
   if (activeId) {
     const p = await getProject(activeId);
@@ -869,7 +871,8 @@ export async function ensureActiveProject() {
     await setActiveProjectId(list[0].id);
     return await getProject(list[0].id);
   }
-  const p = await createProject("默认项目", "自动创建：Issue / 手动黑板等持久数据的默认归属");
+  if (!create) return null;
+  const p = await createProject("默认项目", "显式创建：Issue / 手动黑板等持久数据的默认归属");
   await setActiveProjectId(p.id);
   return p;
 }

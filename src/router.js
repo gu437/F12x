@@ -30,6 +30,13 @@ import {
   addProjectTemplate, removeProjectTemplate, setActiveProjectId, getProject
 } from "./memory.js";
 
+// 持久数据必须落在项目里：没有项目就明确报错（项目只在项目页创建）
+async function requireActiveProjectId(explicitId) {
+  if (explicitId) return explicitId;
+  const p = await ensureActiveProject();
+  return p ? p.id : "";
+}
+
 const VERSION = "0.3.0";
 // 手动 Intruder 的中断控制器（面板「停止」→ tool:intruder_stop 中止当前爆破）
 let manualIntruderCtl = null;
@@ -433,7 +440,8 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "project:fact_remove") {
     (async () => {
       try {
-        const pid = message.projectId || (await ensureActiveProject()).id;
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目（持久数据必须归属项目）", code: "NOT_FOUND" });
         const res = await removeProjectFact(pid, message.key);
         if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
         sendResponse({ ok: true });
@@ -444,7 +452,8 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "project:template_add") {
     (async () => {
       try {
-        const pid = message.projectId || (await ensureActiveProject()).id;
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目（持久数据必须归属项目）", code: "NOT_FOUND" });
         const res = await addProjectTemplate(pid, message.template || {});
         if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
         sendResponse({ ok: true, template: res.template });
@@ -455,7 +464,8 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "project:template_remove") {
     (async () => {
       try {
-        const pid = message.projectId || (await ensureActiveProject()).id;
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目（持久数据必须归属项目）", code: "NOT_FOUND" });
         const res = await removeProjectTemplate(pid, message.templateId);
         if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
         sendResponse({ ok: true });
@@ -468,7 +478,7 @@ export function handleMessage(message, sender, sendResponse) {
     (async () => {
       try {
         const p = await ensureActiveProject();
-        sendResponse({ ok: true, project: { id: p.id, name: p.name }, projects: await listProjects() });
+        sendResponse({ ok: true, project: p ? { id: p.id, name: p.name } : null, projects: await listProjects() });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;
@@ -477,7 +487,7 @@ export function handleMessage(message, sender, sendResponse) {
     (async () => {
       try {
         const p = await ensureActiveProject();
-        sendResponse({ ok: true, project: { id: p.id, name: p.name }, issues: p.issues || [] });
+        sendResponse({ ok: true, project: p ? { id: p.id, name: p.name } : null, issues: p ? (p.issues || []) : [] });
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;
@@ -485,7 +495,8 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "issue:save") {
     (async () => {
       try {
-        const pid = message.projectId || (await ensureActiveProject()).id;
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目（持久数据必须归属项目）", code: "NOT_FOUND" });
         const fields = message.fields || {};
         const res = message.id
           ? await updateProjectIssue(pid, message.id, fields)
@@ -499,7 +510,8 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "issue:delete") {
     (async () => {
       try {
-        const pid = message.projectId || (await ensureActiveProject()).id;
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目（持久数据必须归属项目）", code: "NOT_FOUND" });
         const res = await removeProjectIssue(pid, message.id);
         if (res && res.error) return sendResponse({ ok: false, error: res.error, code: res.code });
         sendResponse({ ok: true });
@@ -518,7 +530,8 @@ export function handleMessage(message, sender, sendResponse) {
     // 手动"存到项目黑板"（原「存到站点」；未绑定项目时写 AI 全局黑板）
     (async () => {
       try {
-        const pid = message.projectId || AI_PROJECT_ID;
+        const pid = await requireActiveProjectId(message.projectId);
+        if (!pid) return sendResponse({ ok: false, error: "请先在「项目」页创建项目", code: "NOT_FOUND" });
         const res = await upsertFact(pid, {
           key: message.key, category: message.category || "misc",
           summary: message.value || message.summary || "", body: message.body || "",
