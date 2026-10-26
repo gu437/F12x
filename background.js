@@ -15,7 +15,7 @@ import { handleMessage } from "./src/router.js";
 import { loadEndpoints } from "./src/llm.js";
 import { cleanupStaleDebugger, recoverInterceptSnapshot, networkSnapshot, consoleSnapshot, backfillFromPerformance } from "./src/debugger.js";
 import { recoverPendingApproval } from "./src/agent.js";
-import { migrateConversationsIfNeeded } from "./src/memory.js";
+import { migrateConversationsIfNeeded, migrateProjectsIfNeeded } from "./src/memory.js";
 
 // --- sidepanel 入口 ---
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
@@ -82,6 +82,7 @@ async function init() {
   await loadEndpoints();
   // 会话存储迁移（全量数组 → 索引 + 每会话一键；幂等）
   try { await migrateConversationsIfNeeded(); } catch (e) { console.warn("[F12x] 会话迁移失败:", e.message); }
+  try { await migrateProjectsIfNeeded(); } catch (e) { console.warn("[F12x] 项目迁移失败:", e.message); }
   await cleanupStaleDebugger(); // 清理残留调试会话，避免 "Another debugger is already attached"
   await recoverInterceptSnapshot(); // 14.1：SW 复活时拦截队列断线放行兜底
   // 14.1 ②：SW 复活时恢复未决批准 → 重新弹批准条（静态导入；AI 隔离由运行时 LLM 配置检查保证）

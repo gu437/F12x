@@ -1,56 +1,136 @@
 // F12x memory 模块（模块化拆分，纯搬移零逻辑变更）
 
-export const PROJECTS_KEY = "projects_v2";
+export const PROJECTS_KEY = "projects_v2"; // 旧：单键 map，仅用于迁移
+export const PROJECTS_INDEX_KEY = "projects_index_v2";
 export const CONVERSATIONS_KEY = "conversations_v2";
 export const ACTIVE_KEY = "active_conv_v2";
 // AI 全局黑板：AI 引擎所有黑板操作（发现/结论/工具事实）的统一归属（AI 数据独立于用户工作区）
 export const AI_PROJECT_ID = "__ai__";
 
-// === 项目（一等实体，用户手动创建） ===
+// === 项目（唯一持久化容器：黑板 / Issue / 模板 / 会话） ===
+// 布局：projects_index_v2（元数据）+ project:<id>（项目全文），与会话一致——保存只写一个项目 + 小索引。
+const projectKey = (id) => "project:" + id;
+
+function projMeta(p) {
+  return {
+    id: p.id, name: p.name || "未命名项目", desc: String(p.desc || "").substring(0, 200),
+    createdAt: p.createdAt || Date.now(), updatedAt: p.updatedAt || p.createdAt || Date.now(),
+    factsCount: (p.facts || []).length,
+    issueCount: (p.issues || []).length,
+    templateCount: (p.templates || []).length,
+  };
+}
+
+async function readProjectIndex() {
+  const r = await chrome.storage.local.get(PROJECTS_INDEX_KEY);
+  return Array.isArray(r[PROJECTS_INDEX_KEY]) ? r[PROJECTS_INDEX_KEY] : [];
+}
+
+let _projChain = Promise.resolve();
+function serialProj(fn) {
+  const next = _projChain.then(fn, fn);
+  _projChain = next.catch(() => {});
+  return next;
+}
+
+// 旧 projects_v2（单键 map）→ 索引 + 每项目一键；幂等
+export async function migrateProjectsIfNeeded() {
+  const r = await chrome.storage.local.get([PROJECTS_KEY, PROJECTS_INDEX_KEY]);
+  const legacy = r[PROJECTS_KEY];
+  if (!legacy || typeof legacy !== "object" || Array.isArray(legacy)) {
+    if (r[PROJECTS_KEY] !== undefined) await chrome.storage.local.remove(PROJECTS_KEY);
+    return { migrated: 0 };
+  }
+  if (Array.isArray(r[PROJECTS_INDEX_KEY]) && r[PROJECTS_INDEX_KEY].length) {
+    await chrome.storage.local.remove(PROJECTS_KEY);
+    return { migrated: 0 };
+  }
+  const list = Object.values(legacy).filter((p) => p && p.id);
+  const patch = {};
+  const index = [];
+  for (const p of list) {
+    const full = { facts: [], issues: [], templates: [], ...p };
+    patch[projectKey(p.id)] = full;
+    index.push(projMeta(full));
+  }
+  if (Object.keys(patch).length) await chrome.storage.local.set(patch);
+  if (index.length) await chrome.storage.local.set({ [PROJECTS_INDEX_KEY]: index });
+  await chrome.storage.local.remove(PROJECTS_KEY);
+  return { migrated: index.length };
+}
+
 export async function listProjects() {
-  const r = await chrome.storage.local.get(PROJECTS_KEY);
-  const projects = r[PROJECTS_KEY] || {};
-  return Object.values(projects).map(p => ({
-    id: p.id, name: p.name, desc: p.desc || "",
-    factsCount: (p.facts || []).length, createdAt: p.createdAt
-  })).sort((a, b) => b.createdAt - a.createdAt);
+  const [idxR, convR] = await Promise.all([
+    chrome.storage.local.get(PROJECTS_INDEX_KEY),
+    chrome.storage.local.get("conversations_index_v2"),
+  ]);
+  const index = Array.isArray(idxR[PROJECTS_INDEX_KEY]) ? idxR[PROJECTS_INDEX_KEY] : [];
+  const convs = Array.isArray(convR["conversations_index_v2"]) ? convR["conversations_index_v2"] : [];
+  const convCount = {};
+  for (const c of convs) if (c.projectId) convCount[c.projectId] = (convCount[c.projectId] || 0) + 1;
+  return index
+    .map((m) => ({ ...m, convCount: convCount[m.id] || 0 }))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
 export async function getProject(projectId) {
   if (!projectId) return null;
-  const r = await chrome.storage.local.get(PROJECTS_KEY);
-  const projects = r[PROJECTS_KEY] || {};
-  return projects[projectId] || null;
+  const r = await chrome.storage.local.get(projectKey(projectId));
+  const p = r[projectKey(projectId)] || null;
+  if (p) return p;
+  try {
+    const m = await migrateProjectsIfNeeded();
+    if (m.migrated) {
+      const r2 = await chrome.storage.local.get(projectKey(projectId));
+      return r2[projectKey(projectId)] || null;
+    }
+  } catch (e) { /* 迁移失败按不存在处理 */ }
+  return null;
 }
 
-export async function saveProject(project) {
-  if (!project?.id) return;
-  const r = await chrome.storage.local.get(PROJECTS_KEY);
-  const projects = r[PROJECTS_KEY] || {};
-  projects[project.id] = project;
-  await chrome.storage.local.set({ [PROJECTS_KEY]: projects });
+export function saveProject(project) {
+  if (!project?.id) return Promise.resolve();
+  return serialProj(() => saveProjectInner(project));
+}
+
+async function saveProjectInner(project) {
+  project.updatedAt = Date.now();
+  const index = await readProjectIndex();
+  const meta = projMeta(project);
+  const i = index.findIndex((m) => m.id === project.id);
+  if (i >= 0) index[i] = meta; else index.push(meta);
+  await chrome.storage.local.set({ [projectKey(project.id)]: project });
+  await chrome.storage.local.set({ [PROJECTS_INDEX_KEY]: index });
 }
 
 export async function createProject(name, desc) {
-  const r = await chrome.storage.local.get(PROJECTS_KEY);
-  const projects = r[PROJECTS_KEY] || {};
   const id = "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
   const project = {
     id, name: String(name || "未命名项目").substring(0, 50),
-    desc: String(desc || "").substring(0, 200), facts: [], createdAt: Date.now()
+    desc: String(desc || "").substring(0, 200),
+    facts: [], issues: [], templates: [], createdAt: Date.now(), updatedAt: Date.now(),
   };
-  projects[id] = project;
-  await chrome.storage.local.set({ [PROJECTS_KEY]: projects });
+  await saveProject(project);
   return project;
 }
 
-export async function deleteProject(projectId) {
-  const r = await chrome.storage.local.get([PROJECTS_KEY, CONVERSATIONS_KEY]);
-  const projects = r[PROJECTS_KEY] || {};
-  delete projects[projectId];
-  const conversations = r[CONVERSATIONS_KEY] || [];
-  for (const c of conversations) if (c.projectId === projectId) c.projectId = null;
-  await chrome.storage.local.set({ [PROJECTS_KEY]: projects, [CONVERSATIONS_KEY]: conversations });
+export function deleteProject(projectId) {
+  return serialProj(() => deleteProjectInner(projectId));
+}
+
+async function deleteProjectInner(projectId) {
+  const index = (await readProjectIndex()).filter((m) => m.id !== projectId);
+  await chrome.storage.local.set({ [PROJECTS_INDEX_KEY]: index });
+  await chrome.storage.local.remove(projectKey(projectId));
+  // 解绑会话（分键布局：逐个改 projectId，不再依赖旧的全量数组）
+  try {
+    const convs = await listConversations();
+    for (const m of convs) {
+      if (m.projectId !== projectId) continue;
+      const c = await getConversation(m.convId);
+      if (c) { c.projectId = null; await saveConversation(c); }
+    }
+  } catch (e) { /* 解绑失败不阻断删除 */ }
 }
 
 export async function renameProject(projectId, name) {
@@ -60,6 +140,82 @@ export async function renameProject(projectId, name) {
   await saveProject(project);
   return { id: project.id, name: project.name };
 }
+
+// 项目内实体（Issue / 模板）——用户不主动删除就不清空
+async function mutateProject(projectId, fn) {
+  return serialProj(async () => {
+    const project = await getProject(projectId);
+    if (!project) return { error: `项目不存在: ${projectId}`, code: "NOT_FOUND" };
+    const out = fn(project) || {};
+    await saveProjectInner(project);
+    return { ok: true, ...out };
+  });
+}
+
+export async function addProjectIssue(projectId, issue = {}) {
+  return mutateProject(projectId, (p) => {
+    p.issues = Array.isArray(p.issues) ? p.issues : [];
+    const it = {
+      id: "iss_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6),
+      title: String(issue.title || "未命名").substring(0, 200),
+      sev: String(issue.sev || "medium").substring(0, 20),
+      status: String(issue.status || "open").substring(0, 20),
+      method: String(issue.method || "").substring(0, 12),
+      url: String(issue.url || "").substring(0, 2000),
+      desc: String(issue.desc || "").substring(0, 20000),
+      evidence: String(issue.evidence || "").substring(0, 50000),
+      createdAt: Date.now(), updatedAt: Date.now(),
+    };
+    p.issues.push(it);
+    return { issue: it };
+  });
+}
+
+export async function updateProjectIssue(projectId, issueId, patch = {}) {
+  return mutateProject(projectId, (p) => {
+    const it = (p.issues || []).find((x) => x.id === issueId);
+    if (!it) return { error: "Issue 不存在", code: "NOT_FOUND" };
+    for (const k of ["title", "sev", "status", "method", "url", "desc", "evidence"]) {
+      if (patch[k] !== undefined) it[k] = String(patch[k]).substring(0, k === "evidence" ? 50000 : 20000);
+    }
+    it.updatedAt = Date.now();
+    return { issue: it };
+  });
+}
+
+export async function removeProjectIssue(projectId, issueId) {
+  return mutateProject(projectId, (p) => {
+    const before = (p.issues || []).length;
+    p.issues = (p.issues || []).filter((x) => x.id !== issueId);
+    return { removed: before - p.issues.length };
+  });
+}
+
+export async function addProjectTemplate(projectId, tpl = {}) {
+  return mutateProject(projectId, (p) => {
+    p.templates = Array.isArray(p.templates) ? p.templates : [];
+    const it = {
+      id: "tpl_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6),
+      name: String(tpl.name || "未命名模板").substring(0, 80),
+      kind: String(tpl.kind || "custom").substring(0, 30),
+      desc: String(tpl.desc || "").substring(0, 500),
+      params: tpl.params && typeof tpl.params === "object" ? tpl.params : {},
+      instructions: String(tpl.instructions || "").substring(0, 5000),
+      createdAt: Date.now(),
+    };
+    p.templates.push(it);
+    return { template: it };
+  });
+}
+
+export async function removeProjectTemplate(projectId, templateId) {
+  return mutateProject(projectId, (p) => {
+    const before = (p.templates || []).length;
+    p.templates = (p.templates || []).filter((x) => x.id !== templateId);
+    return { removed: before - p.templates.length };
+  });
+}
+
 
 // === 黑板（AI 全局事实库，跨会话共享） ===
 export async function upsertFact(projectId, fact) {
@@ -82,13 +238,15 @@ export async function upsertFact(projectId, fact) {
     convId: fact.convId || "",
     // 审查者建议：auto 标记自动沉淀条目——人工删除统计成为可量化数据源（决策点 3 反馈）
     auto: fact.auto === true,
+    // 来源：user=人工录入/标记为发现；ai=模型自动沉淀（并进站点黑板后靠它区分）
+    source: fact.source === "user" || fact.source === "ai" ? fact.source : (fact.auto === true ? "ai" : "user"),
     createdAt: Date.now()
   };
   const idx = facts.findIndex(f => f.key === entry.key);
   if (idx >= 0) {
     const prev = facts[idx];
     // 收敛：内容未变的重复自动沉淀（同结论 steering/兜底）不再刷新时间戳、不重复写库
-    if (prev.category === entry.category && prev.summary === entry.summary && prev.body === entry.body && prev.confidence === entry.confidence && prev.auto === entry.auto) {
+    if (prev.category === entry.category && prev.summary === entry.summary && prev.body === entry.body && prev.confidence === entry.confidence && prev.auto === entry.auto && prev.source === entry.source) {
       return { ok: true, key: entry.key, total: facts.length, updated: false };
     }
     facts[idx] = { ...entry, createdAt: prev.createdAt || entry.createdAt }; // 内容变化才更新（保留首次 createdAt 作稳定排序基准）
@@ -149,7 +307,7 @@ export async function listAIFindings(convId, projectId, includeUnowned = false, 
       if (f.convId === convId) return true;
       return includeUnowned && !f.convId;
     })
-    .map(f => ({ key: f.key, summary: f.summary, body: f.body, confidence: f.confidence, convId: f.convId || "", createdAt: f.createdAt }))
+    .map(f => ({ key: f.key, summary: f.summary, body: f.body, confidence: f.confidence, convId: f.convId || "", source: f.source || (f.auto ? "ai" : "user"), createdAt: f.createdAt }))
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
