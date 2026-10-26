@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · feat：参数级变形与授权矩阵（方案 009 / P3）
+- 改了什么：新增 `src/mutate.js`（URL path/query、JSON body、请求头的对象引用提取；类型保持；候选值）与 `src/matrix.js`（差异分类）；debugger 增加 `replay_batch_with_identity`（同一身份一次 Cookie/storage 事务批量重放）；router 增加 `mutate:extract`、`matrix:run`；Repeater 增加「矩阵」：身份多选/基线/值编辑/结果着色/单元格预览与存证据/CSV。
+- 为什么：身份档案只解决"能切身份"，还缺"改哪个对象、批量跑、怎么判差异"；这是 OWASP A01/API1/API5 的核心验证动作。
+- 验证：`dev/run.mjs` 92/92；真实服务 A/B × 订单 1001/1002：A=200/403；B/1001=403（status-diff）、B/1002=200（exposure）；UI 6 单元格、存证据 count=1；0 `pageerror`。
+- 提交：`5da0b2c`
+
 ### 2026-10-27 · feat：身份档案与身份重放（方案 009 / P2）
 - 改了什么：新增 `src/identity.js`（项目级 Cookie + localStorage/sessionStorage + 认证头、CRUD、项目删除级联）；debugger 增加 `capture_identity_state` 与 `withIdentityState` 事务（快照→应用→finally 恢复，失败保留 `identity_txn_v1`）；`replay_request` 支持 `identity`（同源校验、合并认证头）；router 增加 `identity:list/get/save/remove/capture`，`tool:replay` 接受 `identityId`；Repeater 增加身份选择器与「管理身份」（抓取/编辑头/删除）。
 - 为什么：访问控制测试必须先能控制身份；只读 Cookie 无法覆盖 SPA 的 localStorage Bearer token，且切身份不能污染用户当前会话。
