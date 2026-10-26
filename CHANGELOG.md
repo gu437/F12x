@@ -27,6 +27,12 @@
 
 ## 未发布
 
+### 2026-10-27 · fix：移除证据 2MB 截断（证据完整保存）
+- 改了什么：`evidence.js` 删除 `EVIDENCE_BODY_MAX` 与 `clipBody` 截断逻辑，响应体完整入库，`truncated` 恒为 false；L1 改为断言大响应完整保存；手册与 009 方案同步为"不设上限"。
+- 为什么：证据必须可复现、可核对；截断会让 hash 按截断内容计算、diff 漏尾部字段、报告不完整。此前 2MB 是未经确认的保护性限制，违反项目"不先加约束"原则。
+- 验证：`dev/run.mjs` 110/110；2MB+ 响应保存后 body 长度与原始一致。上游 Repeater 500KB / 矩阵 256KB / 序列 64KB 仍存在，属于展示层限制，待单独决策。
+- 提交：`931ae66`
+
 ### 2026-10-27 · feat：内置 AI 接入项目资产与测试计划（方案 009 / 6.6）
 - 改了什么：新增 `src/ai_assets.js`（`list_assets/get_asset` 项目隔离、原文不脱敏；`propose_tests` 只生成 IDOR/BFLA/CSRF/注入计划、不发请求）；注册 4 个 G1 工具 `list_assets/get_evidence/get_asset/propose_tests`，同步 prompts/executor/experts/agent（LITE + APPROVAL_G1）；anchor 注入资产计数、最近证据索引、身份索引，env 注入资产计数；证据卡新增「AI 分析」；行为边界补充资产原文与 propose_tests 语义。
 - 为什么：P1–P7 的新能力（证据/身份/请求/序列/基线/端点）此前 AI 完全看不到；不接进去，内置 AI 仍停在旧工具面。
