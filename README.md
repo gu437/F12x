@@ -33,6 +33,42 @@ Chrome MV3 扩展，模块化源码，**无构建步骤**，可直接以「加�
    - 改 `src/**` 或 `background.js` → **必须重载**（Service Worker 重新注册，否则仍是旧代码）。
    - 只改 `sidepanel/**` → 关掉侧边栏再打开即可看到。
 
+## 浏览器兼容性
+
+**当前只支持 Chromium 系浏览器；最低 Chrome 116。**
+
+| 浏览器 | 状态 | 说明 |
+| --- | --- | --- |
+| Chrome 116+ | ✅ 支持 / 主要验证 | 开发与截图均基于 Chrome |
+| Edge / Brave / Opera（Chromium 116+） | ⚠️ 应可用，未逐一回归 | 内核与扩展 API 同源；遇到问题请提 Issue |
+| Firefox | ❌ 不支持 | CDP 已在 Firefox 141 移除；没有 `chrome.debugger`；侧边栏不是 `sidePanel` |
+| Safari | ❌ 不支持 | 没有 `chrome.debugger` / `chrome.sidePanel` |
+
+### 为什么不做 Firefox
+
+不是“换个端口/开个 flag”的事。F12x 的核心链路是：
+
+```text
+扩展 chrome.debugger.attach(当前标签页)
+  → CDP 命令（Network / Page / Runtime / DOM / Debugger）
+  → 网络采集、拦截改包、脚本分析、DOM/JS、截图
+```
+
+Firefox 侧同时缺三样东西：
+
+1. **CDP 已移除**：Firefox 141 起只剩 WebDriver BiDi，`remote.active-protocols` 也已移除；不是默认关闭，而是不再提供。
+2. **没有 `chrome.debugger`**：Firefox WebExtensions 没有等价的“扩展直接 attach 标签页”API；CDP/BiDi 是远程调试协议，不是扩展 API。
+3. **侧边栏 API 不同**：F12x 用 `chrome.sidePanel`；Firefox 只有 `sidebar_action`，manifest 和 UI 壳都要重写。
+
+如果强行支持 Firefox，只有两条路：
+
+- 用 Firefox 的 `webRequest` / `filterResponseData` / `devtools.*` 重做一个**精简版**（拦截改包、完整脚本调试、CDP 级响应控制会缩水）；
+- 用 WebDriver BiDi + 外部 driver / native messaging 做**伴侣进程**（功能较全，但破坏“纯扩展、无后端、加载即用”的承诺）。
+
+两条都不是“移植”，而是另起一个 Firefox 后端。当前优先级是保证 Chromium 版本稳定，所以**明确不支持 Firefox**；Firefox 用户请改用 Chrome / Edge / Brave，不建议侧载——扩展能装上，核心功能也会直接不可用。
+
+> 参考：[CDP Retirement in Firefox](https://fxdx.dev/cdp-retirement-in-firefox/)、[Firefox Remote Protocol preferences](https://firefox-source-docs.mozilla.org/remote/Prefs.html)、[Chrome debugger API](https://developer.chrome.com/docs/extensions/reference/api/debugger)、[Chrome sidePanel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel)。
+
 ## 工具台（手动，全部已实现）
 
 | 视图 | 内容 |

@@ -30,6 +30,8 @@
 ## 1. 安装与打开
 
 1. `chrome://extensions` → 右上角开启「开发者模式」→「加载已解压的扩展程序」→ 选择 `F12x` 目录。
+
+> 仅支持 Chromium 系浏览器（Chrome / Edge / Brave / Opera）116+；Firefox / Safari 不支持，原因见 README「浏览器兼容性」。
 2. 点浏览器工具栏的 **F12x 图标** 打开 / 聚焦侧边栏；不再注册键盘快捷键（避免与输入法简繁切换冲突）。
 3. 改了源码：`src/**` 或 `background.js` 必须点扩展卡片「重新加载」；只改 `sidepanel/**` 关掉侧栏再开即可。
 
