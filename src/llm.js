@@ -88,7 +88,9 @@ export async function getLLMConfig() {
     expertModel: dual ? result.llm_expert_model : null,
     baseUrl: baseUrl,
     contextWindow: Number(c.contextWindow) || 0,
+    maxInputTokens: Number(c.maxInputTokens) || 0,
     maxOutput: Number(c.maxOutput) || 8192,
+    windowMode: c.windowMode === "separate" ? "separate" : "shared",
     windowSource: c.windowSource || "",
     provider: c.provider || "openai"
   };

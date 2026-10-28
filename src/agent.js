@@ -1295,11 +1295,18 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
   // 触发 H=0.85U，压缩目标 L=0.55U，保留尾部 R=0.25U；不再使用 0.8W / 0.16W。
   const contextSettings = await readContextSettings();
   const winInfo = resolveContextWindow({
-    model: { contextWindow: config.contextWindow, windowSource: config.windowSource },
+    model: {
+      contextWindow: config.contextWindow,
+      maxInputTokens: config.maxInputTokens,
+      windowMode: config.windowMode,
+      windowSource: config.windowSource,
+    },
     globalWindow: contextSettings.globalWindow,
   });
   const budget = computeContextBudget({
     window: winInfo.window,
+    inputWindow: winInfo.maxInputTokens,
+    windowMode: winInfo.windowMode,
     outputReserve: Number(config.maxOutput) || contextSettings.outputReserve || 8192,
     highWater: contextSettings.highWater || undefined,
     lowWater: contextSettings.lowWater || undefined,
@@ -1367,6 +1374,7 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
     const initialEstimate = estimateRequestTokens({ messages, toolDefs, bias: 1 });
     session.contextBudget = {
       at: Date.now(), window: ctxWindow, windowSource: winInfo.source,
+      windowMode: budget.windowMode, inputLimit: budget.inputLimit,
       outputReserve: budget.outputReserve, safety: budget.safety, usable: budget.usable,
       highWater: budget.highWater, lowWater: budget.lowWater, retainRatio: budget.retainRatio,
       high: budget.high, low: budget.low, retain: budget.retain,

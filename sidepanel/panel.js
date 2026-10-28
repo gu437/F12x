@@ -4457,7 +4457,7 @@ function initSettings() {
   const addBtn = $("settings-model-add");
   if (addBtn) addBtn.addEventListener("click", () => {
     settingsDirty = true;
-    const m = { id: modelGid(), name: "", provider: "openai", apiKey: "", baseUrl: "", model: "", contextWindow: 0, maxOutput: 8192, windowSource: "" };
+    const m = { id: modelGid(), name: "", provider: "openai", apiKey: "", baseUrl: "", model: "", contextWindow: 0, maxInputTokens: 0, maxOutput: 8192, windowMode: "shared", windowSource: "" };
     modelsCache.push(m);
     settingsModelId = m.id;
     settingsShowPage("models");
@@ -4480,7 +4480,7 @@ async function openSettings() {
   // 旧版单配置迁移：仅有 llmConfig 而无模型列表 → 生成一条“默认”，避免升级后配置丢失
   const c = cfg.llmConfig || {};
   if (!modelsCache.length && (c.baseUrl || c.model || c.apiKey)) {
-    modelsCache = [{ id: modelGid(), name: "默认", provider: "openai", apiKey: c.apiKey || "", baseUrl: c.baseUrl || "", model: c.model || "", contextWindow: c.contextWindow || 0, maxOutput: c.maxOutput || 8192, windowSource: c.windowSource || "" }];
+    modelsCache = [{ id: modelGid(), name: "默认", provider: "openai", apiKey: c.apiKey || "", baseUrl: c.baseUrl || "", model: c.model || "", contextWindow: c.contextWindow || 0, maxInputTokens: c.maxInputTokens || 0, maxOutput: c.maxOutput || 8192, windowMode: c.windowMode || "shared", windowSource: c.windowSource || "" }];
   }
   if (!modelsCache.some(m => m.id === modelActiveId)) modelActiveId = modelsCache[0]?.id || "";
   settingsModelId = "";
@@ -4509,7 +4509,9 @@ async function saveSettings() {
     baseUrl: String(m.baseUrl || "").trim(),
     model: String(m.model || "").trim(),
     contextWindow: Number(m.contextWindow) > 0 ? Math.round(Number(m.contextWindow)) : 0,
+    maxInputTokens: Number(m.maxInputTokens) > 0 ? Math.round(Number(m.maxInputTokens)) : 0,
     maxOutput: Number(m.maxOutput) > 0 ? Math.round(Number(m.maxOutput)) : 8192,
+    windowMode: m.windowMode === "separate" ? "separate" : "shared",
     windowSource: m.windowSource === "detected" ? "detected" : (Number(m.contextWindow) > 0 ? "model" : ""),
     detectedAt: Number(m.detectedAt) || 0,
     detectNote: String(m.detectNote || ""),
@@ -4524,6 +4526,7 @@ async function saveSettings() {
   }
   if (active && (!active.baseUrl || !active.model)) return toast("默认模型需填写 Base URL 与模型名");
   if (active && active.contextWindow > 0 && active.maxOutput >= active.contextWindow) return toast("最大输出必须小于上下文窗口");
+  if (active && active.windowMode === "separate" && !(active.maxInputTokens > 0)) return toast("输入/输出分开模式需填写输入上限");
   const high = Number($("settings-context-high").value) || 85;
   const low = Number($("settings-context-low").value) || 55;
   const retain = Number($("settings-context-retain").value) || 25;
@@ -4546,7 +4549,8 @@ async function saveSettings() {
   // 运行引擎读取的仍是 llmConfig：用“默认模型”同步（会话覆盖在运行前单独解析）
   cfg.llmConfig = active ? {
     apiKey: active.apiKey, baseUrl: active.baseUrl, model: active.model,
-    contextWindow: active.contextWindow, maxOutput: active.maxOutput,
+    contextWindow: active.contextWindow, maxInputTokens: active.maxInputTokens,
+    maxOutput: active.maxOutput, windowMode: active.windowMode,
     windowSource: active.windowSource, provider: active.provider,
   } : { apiKey: "", baseUrl: "", model: "", contextWindow: 0, maxOutput: 8192 };
   // 统一交给后台落库（模型 CRUD + 设置键的唯一入口）；面板不再直接写这些键
@@ -4597,15 +4601,17 @@ function settingsModelsRender() {
   const wrap = $("settings-models");
   const detail = $("settings-model-detail");
   if (!wrap) return;
-  if (!modelsCache.length) modelsCache.push({ id: modelGid(), name: "默认", provider: "openai", apiKey: "", baseUrl: "", model: "", contextWindow: 0, maxOutput: 8192, windowSource: "" });
+  if (!modelsCache.length) modelsCache.push({ id: modelGid(), name: "默认", provider: "openai", apiKey: "", baseUrl: "", model: "", contextWindow: 0, maxInputTokens: 0, maxOutput: 8192, windowMode: "shared", windowSource: "" });
   if (!modelsCache.some(m => m.id === modelActiveId)) modelActiveId = modelsCache[0].id;
   if (detail) detail.classList.add("hidden");
   wrap.classList.remove("hidden");
   wrap.innerHTML = modelsCache.map((m) => {
-    const cw = Number(m.contextWindow) > 0 ? Math.round(Number(m.contextWindow) / 1000) + "k" : "窗口未填";
-    const src = m.windowSource === "detected" ? "自动检测" : (Number(m.contextWindow) > 0 ? "手动" : "待设置");
+    const rawWin = Number(m.contextWindow) > 0 ? Number(m.contextWindow) : Number(m.maxInputTokens);
+    const cw = rawWin > 0 ? Math.round(rawWin / 1000) + "k" : "窗口未填";
+    const src = m.windowSource === "detected" ? "自动检测" : (rawWin > 0 ? "手动" : "待设置");
+    const mode = m.windowMode === "separate" ? "分开" : "共享";
     return `<button class="settings-model-card" type="button" data-model-open="${esc(m.id)}">
-      <span class="smc-top"><span class="smc-name">${esc(modelName(m))}</span>${m.id === modelActiveId ? '<span class="smc-badge default">默认</span>' : ""}<span class="smc-badge">${esc(cw)} · ${esc(src)}</span></span>
+      <span class="smc-top"><span class="smc-name">${esc(modelName(m))}</span>${m.id === modelActiveId ? '<span class="smc-badge default">默认</span>' : ""}<span class="smc-badge">${esc(cw)} · ${esc(src)} · ${esc(mode)}</span></span>
       <span class="smc-sub">${esc(m.model || "未填模型名")}${m.baseUrl ? " · " + esc(m.baseUrl) : ""}</span>
     </button>`;
   }).join("");
@@ -4639,11 +4645,16 @@ function settingsModelDetailRender() {
       </select></label>
       <label>Base URL<input data-f="baseUrl" value="${esc(m.baseUrl || "")}" placeholder="http://127.0.0.1:11434" /></label>
       <label>API Key<input data-f="apiKey" type="password" value="${esc(m.apiKey || "")}" placeholder="${loopback ? "本地回环可留空" : "必填"}" /></label>
+      <label>窗口类型<select data-f="windowMode">
+        <option value="shared"${m.windowMode === "separate" ? "" : " selected"}>共享上下文（输入+输出共用）</option>
+        <option value="separate"${m.windowMode === "separate" ? " selected" : ""}>输入/输出分开</option>
+      </select></label>
       <label>模型名<input data-f="model" value="${esc(m.model || "")}" placeholder="deepseek-chat / qwen2.5:7b" /></label>
-      <label>上下文窗口（token）<input data-f="contextWindow" type="number" min="4096" step="1024" value="${Number(m.contextWindow) > 0 ? Number(m.contextWindow) : ""}" placeholder="留空 = 自动/全局兜底" /></label>
+      <label>上下文总窗口（token）<input data-f="contextWindow" type="number" min="4096" step="1024" value="${Number(m.contextWindow) > 0 ? Number(m.contextWindow) : ""}" placeholder="shared 必填；separate 可留空" /></label>
+      <label>输入上限（separate 用）<input data-f="maxInputTokens" type="number" min="4096" step="1024" value="${Number(m.maxInputTokens) > 0 ? Number(m.maxInputTokens) : ""}" placeholder="separate 模式填写" /></label>
       <label>最大输出（token）<input data-f="maxOutput" type="number" min="256" step="256" value="${Number(m.maxOutput) || 8192}" /></label>
     </div>
-    <div class="smd-hint" id="smd-window-hint">${Number(m.contextWindow) > 0 ? "窗口来源：" + (m.windowSource === "detected" ? "自动检测" : "手动") + " · 直接决定压缩触发" : "窗口留空：保存后按全局兜底/32768 计算，建议填写"}</div>
+    <div class="smd-hint" id="smd-window-hint">${m.windowMode === "separate" && Number(m.maxInputTokens) > 0 ? "输入上限 " + m.maxInputTokens + " · 输出上限 " + (Number(m.maxOutput) || 8192) + "（分开计算）" : (Number(m.contextWindow) > 0 ? "窗口来源：" + (m.windowSource === "detected" ? "自动检测" : "手动") + " · 输入与输出共享总窗口" : "窗口留空：保存后按全局兜底/32768 计算，建议填写")}</div>
     <div class="smd-actions" style="justify-content:flex-start"><button class="mini-btn" type="button" data-smd-detect>自动检测窗口</button></div>
     <label class="set-check-row" style="margin-top:2px"><input type="checkbox" data-smd-default ${m.id === modelActiveId ? "checked" : ""} /> <span>设为默认模型</span></label>
     <div class="smd-actions">
@@ -4651,18 +4662,22 @@ function settingsModelDetailRender() {
       <button class="mini-btn" type="button" data-smd-back>返回列表</button>
     </div>`;
   detail.querySelectorAll("[data-f]").forEach((inp) => {
-    inp.addEventListener("input", () => {
+    const onEdit = () => {
       const f = inp.dataset.f;
-      if (f === "contextWindow" || f === "maxOutput") {
+      if (f === "contextWindow" || f === "maxInputTokens" || f === "maxOutput") {
         m[f] = Number(inp.value) > 0 ? Math.round(Number(inp.value)) : 0;
         if (f === "contextWindow") m.windowSource = m[f] > 0 ? "model" : "";
       } else m[f] = inp.value;
-      if (f === "contextWindow") {
-        const hint = $("smd-window-hint");
-        if (hint) hint.textContent = m.contextWindow > 0 ? "窗口来源：手动 · 直接决定压缩触发" : "窗口留空：保存后按全局兜底/32768 计算，建议填写";
-        settingsContextPreview();
+      const hint = $("smd-window-hint");
+      if (hint) {
+        hint.textContent = m.windowMode === "separate" && m.maxInputTokens > 0
+          ? "输入上限 " + m.maxInputTokens + " · 输出上限 " + (m.maxOutput || 8192) + "（分开计算）"
+          : (m.contextWindow > 0 ? "窗口来源：手动 · 输入与输出共享总窗口" : "窗口留空：保存后按全局兜底/32768 计算，建议填写");
       }
-    });
+      settingsContextPreview();
+    };
+    inp.addEventListener("input", onEdit);
+    inp.addEventListener("change", onEdit);
   });
   const detect = detail.querySelector("[data-smd-detect]");
   if (detect) detect.addEventListener("click", async () => {
@@ -4672,14 +4687,25 @@ function settingsModelDetailRender() {
       const r = await api("model:detect-context", { model: { id: m.id, provider: m.provider, baseUrl: m.baseUrl, apiKey: m.apiKey, model: m.model } });
       if (!r || !r.ok) return toast("未检测到窗口：" + ((r && r.error) || "未知错误"));
       m.contextWindow = Number(r.window) || 0;
+      m.maxInputTokens = Number(r.maxInputTokens) || 0;
+      m.maxOutput = Number(r.maxOutput) || m.maxOutput || 8192;
+      m.windowMode = r.windowMode === "separate" ? "separate" : "shared";
       m.windowSource = "detected";
       m.detectedAt = Date.now();
       m.detectNote = r.note || "";
       const inp = detail.querySelector('[data-f="contextWindow"]');
-      if (inp) inp.value = m.contextWindow;
+      if (inp) inp.value = m.contextWindow || "";
+      const inpIn = detail.querySelector('[data-f="maxInputTokens"]');
+      if (inpIn) inpIn.value = m.maxInputTokens || "";
+      const inpOut = detail.querySelector('[data-f="maxOutput"]');
+      if (inpOut) inpOut.value = m.maxOutput || 8192;
+      const modeSel = detail.querySelector('[data-f="windowMode"]');
+      if (modeSel) modeSel.value = m.windowMode;
       const hint = $("smd-window-hint");
-      if (hint) hint.textContent = "窗口来源：自动检测 · 直接决定压缩触发";
-      toast("已检测：窗口 " + m.contextWindow + " token");
+      if (hint) hint.textContent = m.windowMode === "separate"
+        ? "输入上限 " + m.maxInputTokens + " · 输出上限 " + m.maxOutput + "（分开计算）"
+        : "窗口来源：自动检测 · 输入与输出共享总窗口";
+      toast("已检测：" + (m.windowMode === "separate" ? "输入 " + m.maxInputTokens + " / 输出 " + m.maxOutput : "窗口 " + m.contextWindow) + " token");
       settingsContextPreview();
     } finally {
       detect.disabled = false;
@@ -4714,8 +4740,12 @@ function settingsContextParams() {
   const editing = settingsPageName === "models" && settingsModelId ? modelFind(settingsModelId) : null;
   const def = editing || modelFind(modelActiveId) || modelsCache[0] || null;
   const globalWindow = Number($("settings-context-window")?.value) || 0;
+  const mode = def?.windowMode === "separate" ? "separate" : "shared";
+  const inputWindow = Number(def?.maxInputTokens) || 0;
   return {
-    window: Number(def?.contextWindow) > 0 ? Number(def.contextWindow) : (globalWindow || 32768),
+    window: Number(def?.contextWindow) > 0 ? Number(def.contextWindow) : (mode === "separate" && inputWindow ? 0 : (globalWindow || 32768)),
+    inputWindow,
+    windowMode: mode,
     outputReserve: Number(def?.maxOutput) || Number($("settings-context-output")?.value) || 8192,
     highWater: (Number($("settings-context-high")?.value) || 85) / 100,
     lowWater: (Number($("settings-context-low")?.value) || 55) / 100,
@@ -4734,10 +4764,11 @@ async function settingsContextPreview() {
   if (!r || !r.ok) { el.textContent = "预算计算失败：" + ((r && r.error) || "后台无响应"); return; }
   const b = r.budget;
   const shownModel = settingsPageName === "models" && settingsModelId ? modelFind(settingsModelId) : modelFind(modelActiveId);
-  const src = shownModel?.contextWindow > 0
+  const hasShownWindow = shownModel && (Number(shownModel.contextWindow) > 0 || (shownModel.windowMode === "separate" && Number(shownModel.maxInputTokens) > 0));
+  const src = hasShownWindow
     ? (shownModel?.windowSource === "detected" ? "模型 · 自动检测" : "模型 · 手动")
     : (Number($("settings-context-window")?.value) > 0 ? "全局兜底" : "默认 32768");
-  el.innerHTML = `窗口 <b>${b.window}</b>（${esc(src)}） · 输出预留 <b>${b.outputReserve}</b> · 安全余量 <b>${b.safety}</b><br>
+  el.innerHTML = `窗口 <b>${b.window}</b>（${esc(src)}） · ${b.windowMode === "separate" ? "输入/输出分开" : "共享窗口"} · 输入上限 <b>${b.inputLimit}</b> · 输出预留 <b>${b.outputReserve}</b> · 安全余量 <b>${b.safety}</b><br>
     可用输入 <b>${b.usable}</b> · 触发线 <b>${b.high}</b>（${Math.round(b.highWater * 100)}%）· 压缩目标 <b>${b.low}</b>（${Math.round(b.lowWater * 100)}%） · 保留尾部 <b>${b.retain}</b>`;
   const sc = $("set-summary-context");
   if (sc) sc.textContent = `触发 ${b.high} → 目标 ${b.low}`;
@@ -4749,9 +4780,10 @@ function settingsDiagPayload() {
   return {
     version: chrome.runtime.getManifest().version,
     browser: navigator.userAgent,
-    activeModel: m ? { name: modelName(m), model: m.model, contextWindow: m.contextWindow, windowSource: m.windowSource } : null,
+    activeModel: m ? { name: modelName(m), model: m.model, contextWindow: m.contextWindow, maxInputTokens: m.maxInputTokens, maxOutput: m.maxOutput, windowMode: m.windowMode, windowSource: m.windowSource } : null,
     contextBudget: b ? {
-      window: b.window, windowSource: b.windowSource, usable: b.usable,
+      window: b.window, windowMode: b.windowMode, inputLimit: b.inputLimit, windowSource: b.windowSource,
+      outputReserve: b.outputReserve, usable: b.usable,
       high: b.high, low: b.low, retain: b.retain,
       actualTotal: b.actualTotal || 0, cached: b.cached || 0, percent: b.percent || 0,
     } : null,
@@ -4768,7 +4800,7 @@ function settingsCurrentContextRender() {
     return;
   }
   const comps = (aiDetailConv.events || []).filter((e) => e && e.type === "compaction").length;
-  el.innerHTML = `窗口 <b>${b.window || "?"}</b>（${esc({ model: "模型", detected: "自动检测", global: "全局", default: "默认 32768" }[b.windowSource] || "未知")}） · 实际 <b>${b.actualTotal || 0}</b> · 估算 <b>${b.estimate || 0}</b>（${b.percent || 0}%）<br>
+  el.innerHTML = `窗口 <b>${b.window || "?"}</b>（${esc({ model: "模型", detected: "自动检测", global: "全局", default: "默认 32768" }[b.windowSource] || "未知")}） · ${b.windowMode === "separate" ? "输入/输出分开" : "共享窗口"} · 输入上限 <b>${b.inputLimit || "?"}</b> · 实际 <b>${b.actualTotal || 0}</b> · 估算 <b>${b.estimate || 0}</b>（${b.percent || 0}%）<br>
     触发 <b>${b.high || "?"}</b> · 目标 <b>${b.low || "?"}</b> · 保留 <b>${b.retain || "?"}</b> · 已压缩 <b>${comps}</b> 次`;
 }
 
@@ -4776,8 +4808,9 @@ function settingsContextRender() {
   const box = $("settings-context-models");
   if (box) {
     box.innerHTML = modelsCache.map((m) => {
-      const cw = Number(m.contextWindow) > 0 ? Number(m.contextWindow) : 0;
-      return `<div class="set-context-row"><span>${esc(modelName(m))}</span><span class="${cw ? "" : "muted"}">${cw ? cw + " · " + (m.windowSource === "detected" ? "自动检测" : "手动") : "未填写"}</span></div>`;
+      const raw = Number(m.contextWindow) > 0 ? Number(m.contextWindow) : Number(m.maxInputTokens);
+      const mode = m.windowMode === "separate" ? "分开" : "共享";
+      return `<div class="set-context-row"><span>${esc(modelName(m))}</span><span class="${raw ? "" : "muted"}">${raw ? raw + " · " + mode + " · " + (m.windowSource === "detected" ? "自动检测" : "手动") : "未填写"}</span></div>`;
     }).join("") || '<p class="set-desc">还没有模型。</p>';
   }
   settingsContextPreview();

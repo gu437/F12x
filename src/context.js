@@ -19,31 +19,51 @@ export function clampContextWindow(value) {
 }
 
 // 模型窗口优先；全局设置只兜底；未知模型用保守 32768，不默认 131072。
+// windowMode：shared=输入输出共享总窗口；separate=输入上限/输出上限分开。
 export function resolveContextWindow({ model = null, globalWindow = 0 } = {}) {
+  const mode = model && model.windowMode === "separate" ? "separate" : "shared";
   const mw = clampContextWindow(model && model.contextWindow);
-  if (mw) {
+  const mi = clampContextWindow(model && model.maxInputTokens);
+  if (mw || mi) {
     const source = model && model.windowSource === "detected" ? "detected" : "model";
-    return { window: mw, source };
+    // separate 且没有总窗口时，window=0 表示“总窗口未知”，预算只按 maxInputTokens 算；
+    // shared 只有输入上限时，把它当总窗口（保守）。
+    const window = mw || (mode === "shared" ? mi : 0);
+    return { window, maxInputTokens: mi, windowMode: mode, source };
   }
   const gw = clampContextWindow(globalWindow);
-  if (gw) return { window: gw, source: "global" };
-  return { window: DEFAULT_CONTEXT_WINDOW, source: "default" };
+  if (gw) return { window: gw, maxInputTokens: 0, windowMode: "shared", source: "global" };
+  return { window: DEFAULT_CONTEXT_WINDOW, maxInputTokens: 0, windowMode: "shared", source: "default" };
 }
 
-// 统一预算：W 窗口、O 输出预留、S 安全余量、U 可用输入、H 高压线、L 低压线、R 保留尾部
+// 统一预算：
+// - shared：U = W - O - S（输入与输出共享总窗口）
+// - separate：U = Win - S（输入上限独立；输出只受 maxOutput 约束，不占输入预算）
 export function computeContextBudget({
   window: win = DEFAULT_CONTEXT_WINDOW,
+  inputWindow = 0,
+  windowMode = "shared",
   outputReserve = DEFAULT_OUTPUT_RESERVE,
   safety = 0,
   highWater = 0.85,
   lowWater = 0.55,
   retainRatio = 0.25,
 } = {}) {
-  const W = clampContextWindow(win) || DEFAULT_CONTEXT_WINDOW;
+  const rawW = clampContextWindow(win);
+  const W = rawW || DEFAULT_CONTEXT_WINDOW;
+  const mode = windowMode === "separate" ? "separate" : "shared";
   const O = Math.round(clamp(Number(outputReserve) || DEFAULT_OUTPUT_RESERVE, 256, Math.max(512, Math.floor(W * 0.4))));
-  const defaultSafety = Math.max(2048, Math.floor(W * 0.05));
-  const S = Math.round(clamp(Number(safety) || defaultSafety, 512, Math.max(512, Math.floor((W - O) * 0.25))));
-  const U = Math.max(1024, W - O - S);
+  let inputLimit;
+  if (mode === "separate") {
+    inputLimit = clampContextWindow(inputWindow) || W;
+    // 如果同时给了总窗口，输入仍不能超过“总窗口 - 输出预留”
+    if (rawW > 0 && rawW > O) inputLimit = Math.min(inputLimit, Math.max(1024, rawW - O));
+  } else {
+    inputLimit = Math.max(1024, W - O);
+  }
+  const defaultSafety = Math.max(2048, Math.floor(inputLimit * 0.05));
+  const S = Math.round(clamp(Number(safety) || defaultSafety, 512, Math.max(512, Math.floor(inputLimit * 0.25))));
+  const U = Math.max(1024, inputLimit - S);
   const hi = clamp(Number(highWater) || 0.85, 0.5, 0.95);
   const lo = clamp(Number(lowWater) || 0.55, 0.2, hi - 0.05);
   const rr = clamp(Number(retainRatio) || 0.25, 0.1, 0.6);
@@ -51,7 +71,9 @@ export function computeContextBudget({
   const L = Math.floor(U * lo);
   const R = Math.min(Math.max(2048, Math.floor(U * rr)), Math.max(512, L - 512));
   return {
-    window: W,
+    window: rawW || inputLimit,
+    windowMode: mode,
+    inputLimit,
     outputReserve: O,
     safety: S,
     usable: U,

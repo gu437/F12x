@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "F12x",
   "description": "用户主导的浏览器工具台（F12 全能力 + Burp 精简版）+ 内建 AI 聊天工作台",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "permissions": [
     "debugger",
     "sidePanel",
