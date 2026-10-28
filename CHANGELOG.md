@@ -31,7 +31,7 @@
 - 改了什么：模型详情里修改上下文窗口/最大输出时，预算预览优先按当前编辑模型计算，而不是默认模型。
 - 为什么：编辑非默认模型时预览会显示另一个模型的窗口，容易误判触发线。
 - 验证：`dev/run.mjs` 124/124；设置页无 pageerror。
-- 提交：未发布
+- 提交：`2f3a554`
 
 ### 2026-10-28 · feat：上下文压缩触发机制与设置页重构（0.5.0）
 - 改了什么：新增 `src/context.js`（模型窗口解析、U/H/L/R 预算、请求估算、bias 校准、摘要输入预算）与 `src/model_context.js`（Ollama / OpenAI 兼容 / Anthropic / Gemini / LM Studio 窗口探测）；`agent.js` 改用总 `prompt_tokens`（含缓存命中）、模型 `contextWindow`、先 prune 后摘要、H=0.85U / L=0.55U / R=0.25U、摘要 historyBudget；`models.js/llm.js/router.js` 透传窗口字段；设置页改为多页（模型与连接 / 上下文与压缩 / AI 行为 / 数据与隐私 / 关于与诊断），模型详情支持窗口、最大输出、自动检测；版本 0.5.0 五处同步，README/手册/AGENTS 更新。
