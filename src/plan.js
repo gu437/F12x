@@ -123,8 +123,8 @@ export function sanitizeMessageSequence(messages) {
 }
 
 export function compactMessages(messages, opts = {}) {
-  // P0-2：默认目标 120k（与 128k 触发阈值同量级）——原 200k 压缩后仍超 deepseek 窗口
-  const maxTokens = opts.maxTokens || 104857; // 对齐 DSH compaction-basic：默认 0.8 × 131072 窗口
+  // legacy fallback：调用方（agent）总会传入当前预算的 L；单独调用时用 64k 兜底
+  const maxTokens = opts.maxTokens || 65536;
   const toolMaxChars = opts.toolMaxChars || 12000;
   if (!messages || !messages.length) return messages;
   // 旧数据兼容：残留 internal 角色归一化为 user（API 合法值；_sys 保留供过滤/审计）——
@@ -253,8 +253,8 @@ function buildSummaryHistory(msgs, budgetTokens = 12000) {
 }
 
 export async function compactionWithSummary(messages, opts = {}) {
-  // DSH compaction-basic 同语义：maxTokens=压力阈值（0.8×窗口），retainTokens=保留尾部（0.16×窗口），
-  // summaryMaxTokens=摘要生成上限（默认 8192）；force=true 时忽略 early-return（provider 已确认溢出场景）
+  // 方案 010：maxTokens=压缩目标 L（由 agent 传入，不再是触发线 H）；retainTokens=保留尾部 R；
+  // summaryMaxTokens=摘要生成上限；historyBudget=摘要请求总输入预算；force=true 仅用于 provider 溢出。
   const maxTokens = opts.maxTokens || 104857;
   const toolMaxChars = opts.toolMaxChars || 12000;
   const summaryMaxTokens = opts.summaryMaxTokens || 8192;
@@ -286,7 +286,7 @@ export async function compactionWithSummary(messages, opts = {}) {
   // 降级（D3）：无 LLM 配置 → 丢轮次
   if (!opts.config?.apiKey) {
     console.warn("[Agent] 无 LLM 配置——compaction 降级为丢轮次");
-    opts.onCompacted?.("drop", { compactionId });
+    opts.onCompacted?.("drop", { compactionId, reason: "no_llm" });
     return compactMessages(messages, opts);
   }
 
@@ -330,7 +330,7 @@ export async function compactionWithSummary(messages, opts = {}) {
     // 修复（审读中）：用户中止时不做"降级丢轮"（会丢弃区间 + 与中止语义冲突）——上抛由上层按中止处理
     if (opts.signal?.aborted || e?.name === "AbortError" || /abort/i.test(String(e?.message || ""))) throw e;
     console.warn(`[Agent] compaction 摘要调用失败（${e.message}）——降级为丢轮次`);
-    opts.onCompacted?.("drop", { compactionId });
+    opts.onCompacted?.("drop", { compactionId, reason: "summary_failed" });
     return compactMessages(messages, opts);
   }
 
@@ -338,7 +338,7 @@ export async function compactionWithSummary(messages, opts = {}) {
   const summaryTokens = estimateTokensV2(summary);
   if (!summary.trim() || summaryTokens >= droppedTokens) {
     console.warn(`[Agent] compaction 摘要无效（${summaryTokens} tokens ≥ 被压缩 ${droppedTokens} tokens）——不采用，降级为丢轮次`);
-    opts.onCompacted?.("drop", { compactionId });
+    opts.onCompacted?.("drop", { compactionId, reason: "invalid_summary" });
     return compactMessages(messages, opts);
   }
 

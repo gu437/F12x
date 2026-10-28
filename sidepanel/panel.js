@@ -4360,6 +4360,11 @@ function chatOnStatus(st) {
     }
     return;
   }
+  if (t === "ai:compaction_failed") {
+    const why = st.reason === "no_llm" ? "未配置模型" : (st.reason === "invalid_summary" ? "摘要无效" : "摘要调用失败");
+    chatFlowLine("warn", "⚠ 上下文压缩未完成（" + escapeHtml(why) + "），已降级为裁剪/丢轮次；关键上下文可能丢失");
+    return;
+  }
   if (t === "ai:tool_timeout") { chatFlowLine("warn", "⏱ 工具 " + escapeHtml(String(st.tool || "")) + " 超时"); return; }
   if (t === "ai:repeat_tool_notice") { chatFlowLine("warn", "⚠ 已连续 " + (st.count || 3) + " 次重复调用 " + escapeHtml(String(st.tool || "")) + "（已提醒模型）"); return; }
   if (t === "shot_captured") {
@@ -4377,6 +4382,13 @@ function chatOnStatus(st) {
 // ============================================================
 let settingsPageName = "home";
 let settingsModelId = "";
+let settingsDirty = false;
+
+function closeSettings(force = false) {
+  if (!force && settingsDirty && !confirm("有未保存的设置，确定放弃修改？")) return;
+  settingsDirty = false;
+  $("settings-panel").classList.add("hidden");
+}
 
 function settingsShowPage(name) {
   settingsPageName = name;
@@ -4402,11 +4414,13 @@ function settingsShowPage(name) {
 
 function initSettings() {
   $("settings-toggle").addEventListener("click", openSettings);
-  $("settings-cancel").addEventListener("click", () => $("settings-panel").classList.add("hidden"));
+  $("settings-cancel").addEventListener("click", () => closeSettings());
   $("settings-save").addEventListener("click", saveSettings);
   $("settings-back").addEventListener("click", () => settingsShowPage("home"));
+  $("settings-panel").addEventListener("input", () => { settingsDirty = true; });
+  $("settings-panel").addEventListener("change", () => { settingsDirty = true; });
   $("settings-panel").addEventListener("click", (e) => {
-    if (e.target === $("settings-panel")) $("settings-panel").classList.add("hidden");
+    if (e.target === $("settings-panel")) closeSettings();
   });
   document.querySelectorAll("#settings-panel [data-set-go]").forEach((b) => {
     b.addEventListener("click", () => settingsShowPage(b.dataset.setGo));
@@ -4418,6 +4432,7 @@ function initSettings() {
   });
   const addBtn = $("settings-model-add");
   if (addBtn) addBtn.addEventListener("click", () => {
+    settingsDirty = true;
     const m = { id: modelGid(), name: "", provider: "openai", apiKey: "", baseUrl: "", model: "", contextWindow: 0, maxOutput: 8192, windowSource: "" };
     modelsCache.push(m);
     settingsModelId = m.id;
@@ -4445,6 +4460,7 @@ async function openSettings() {
   }
   if (!modelsCache.some(m => m.id === modelActiveId)) modelActiveId = modelsCache[0]?.id || "";
   settingsModelId = "";
+  settingsDirty = false;
   $("settings-thinklimit").value = Number(cfg.f12x_thinking_limit) > 0 ? Number(cfg.f12x_thinking_limit) : "";
   $("settings-llm").value = (Array.isArray(cfg.llm_endpoints) && cfg.llm_endpoints.length ? cfg.llm_endpoints : ["https://api.deepseek.com", "https://api.openai.com", "https://api.anthropic.com", "http://localhost:11434"]).join("\n");
   $("settings-approval").value = cfg.approvalLevel || "read_auto_write_approve";
@@ -4528,6 +4544,7 @@ async function saveSettings() {
     activeId: active ? active.id : ""
   });
   if (!saved || !saved.ok) return toast("保存失败：" + ((saved && saved.error) || "后台无响应"));
+  settingsDirty = false;
   $("settings-panel").classList.add("hidden");
   const who = active ? (modelName(active) || active.model || active.baseUrl) : "（无）";
   toast(active ? ("设置已保存｜默认模型：" + who) : "设置已保存（未配置任何模型）");
@@ -4651,6 +4668,7 @@ function settingsModelDetailRender() {
   const del = detail.querySelector("[data-smd-del]");
   if (del) del.addEventListener("click", () => {
     if (modelsCache.length <= 1) return toast("至少保留一个模型");
+    settingsDirty = true;
     modelsCache = modelsCache.filter(x => x.id !== m.id);
     if (!modelsCache.some(x => x.id === modelActiveId)) modelActiveId = modelsCache[0]?.id || "";
     settingsModelId = "";

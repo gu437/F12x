@@ -114,3 +114,16 @@ export function decideContextAction({ projected = 0, budget } = {}) {
   if (p <= b.usable) return { action: "compact", level: "high" };
   return { action: "compact", level: "overflow" };
 }
+
+// 滞回：刚压缩过且没有明显新增时，不因估算抖动再次压缩；超过硬上限必须压。
+export function shouldCompactNow({
+  projected = 0, budget, round = 0, lastRound = -1,
+  lastProjected = 0, minGrowth = 2048, cooldownRounds = 2,
+} = {}) {
+  const b = budget || computeContextBudget();
+  const p = Number(projected) || 0;
+  if (p <= b.high) return false;
+  if (p > b.usable) return true;
+  if (lastRound >= 0 && round - lastRound < Math.max(1, cooldownRounds) && (p - Number(lastProjected || 0)) < Math.max(0, minGrowth)) return false;
+  return true;
+}

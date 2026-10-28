@@ -38,7 +38,7 @@ import {
 } from "./guards.js";
 import { runReviewAudit, TOOL_NAMES_CN } from "./experts.js";
 import { buildAnchorBlock, compactionWithSummary, isCheckpointMessage, sanitizeMessageSequence, pruneToolResults } from "./plan.js";
-import { resolveContextWindow, computeContextBudget, estimateRequestTokens, contextPercent, summaryInputBudget, updateEstimateBias, decideContextAction } from "./context.js";
+import { resolveContextWindow, computeContextBudget, estimateRequestTokens, contextPercent, summaryInputBudget, updateEstimateBias, decideContextAction, shouldCompactNow } from "./context.js";
 import { assembleSections, TOOL_DEFINITIONS, buildCapabilityManifest, buildEnvSection } from "./prompts.js";
 import { dispatchTool } from "./executor.js";
 import { summarizeAssets } from "./ai_assets.js";
@@ -1388,6 +1388,7 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
   const ctx = {
     session, config, endpoint, messages, onStatus, userMessage, facts,
     budget, toolDefs, contextBias: 1,
+    compaction: { lastRound: -1, lastProjected: 0 },
     abortController,
     historyStartIdx,
     aborted: false,
@@ -1451,6 +1452,8 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
       if (cp && !cp._seq) cp._seq = ++msgSeqCounter; // 打水位标，供 flushRunProgress 抄入记录
       flushRunProgress(ctx); // checkpoint 落库
       try { if (onStatus) onStatus({ type: "ai:compaction_done", ...info }); } catch (e) {}
+    } else if (method === "drop") {
+      try { if (onStatus) onStatus({ type: "ai:compaction_failed", reason: (info && info.reason) || "drop", ...(info && info.compactionId ? { compactionId: info.compactionId } : {}) }); } catch (e) {}
     }
     flushSession(session); // 广播 conversation:changed → 面板实时刷新记录
   };
@@ -1470,7 +1473,12 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
     const estimateCall = (msgs) => estimateRequestTokens({ messages: msgs, toolDefs: ctx.toolDefs, bias: ctx.contextBias });
     let projected = Math.max(estimateCall(messagesForCall), session.lastPromptTokens || 0);
     const pressureAction = decideContextAction({ projected, budget: ctx.budget });
-    if (pressureAction.action !== "none") {
+    const allowCompact = shouldCompactNow({
+      projected, budget: ctx.budget, round,
+      lastRound: ctx.compaction.lastRound,
+      lastProjected: ctx.compaction.lastProjected,
+    });
+    if (pressureAction.action !== "none" && allowCompact) {
       const pruned = pruneToolResults(messagesForCall, { budgetChars: 4000, protectRecentTools: 3 });
       if (pruned.changed) {
         messagesForCall = pruned.messages;
@@ -1498,6 +1506,8 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
         everSummarized = true;
         session.lastPromptTokens = 0; // 压缩后旧 actual 失效，下一轮重新观测
         projected = estimateCall(messagesForCall);
+        ctx.compaction.lastRound = round;
+        ctx.compaction.lastProjected = projected;
         if (projected > ctx.budget.high) {
           // 一次压缩后仍超阈 → 放宽保护再裁；仍超则交给 provider overflow 路径兜底
           messagesForCall = pruneToolResults(messagesForCall, { budgetChars: 2000, protectRecentTools: 1 }).messages;
