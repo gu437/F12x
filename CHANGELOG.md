@@ -31,7 +31,7 @@
 - 改了什么：模型条目增加 `windowMode`（shared/separate）与 `maxInputTokens`；共享窗口按 `U=W-输出预留-安全余量`，分开模式按 `U=输入上限-安全余量`，输出只受 maxOutput 约束；自动检测按 provider 返回 max_input_tokens/inputTokenLimit 识别分开模式；设置页新增窗口类型/输入上限并显示模式；README/手册/方案/截图同步。
 - 为什么：旧版把所有模型都当“输入输出共享总窗口”，对 Claude/Gemini 这类输入上限独立的模型会多扣一次输出，导致过早压缩。
 - 验证：`dev/run.mjs` 127/127；真实 Chrome 分开模式 200k 输入/8k 输出 → 可用输入 190000、触发 161500；设置页 0 pageerror。
-- 提交：未发布
+- 提交：`f447743`
 
 ### 2026-10-28 · fix：设置页当前会话与脱敏导出（0.5.2）
 - 改了什么：上下文页新增“当前会话”实际/估算/压缩次数展示；数据页新增“复制诊断信息”（不含 Key/Cookie/请求内容）与“导出设置（不含 Key）”；导出模型条目移除 apiKey，llmConfig 的 apiKey 置空。
