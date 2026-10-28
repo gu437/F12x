@@ -31,7 +31,7 @@
 - 改了什么：新增 `src/context.js`（模型窗口解析、U/H/L/R 预算、请求估算、bias 校准、摘要输入预算）与 `src/model_context.js`（Ollama / OpenAI 兼容 / Anthropic / Gemini / LM Studio 窗口探测）；`agent.js` 改用总 `prompt_tokens`（含缓存命中）、模型 `contextWindow`、先 prune 后摘要、H=0.85U / L=0.55U / R=0.25U、摘要 historyBudget；`models.js/llm.js/router.js` 透传窗口字段；设置页改为多页（模型与连接 / 上下文与压缩 / AI 行为 / 数据与隐私 / 关于与诊断），模型详情支持窗口、最大输出、自动检测；版本 0.5.0 五处同步，README/手册/AGENTS 更新。
 - 为什么：旧实现用 `prompt_tokens - cached` 判断上下文、所有模型默认 131072、0.8/0.16 无低压目标/滞回，导致压缩过早或过晚；设置页单页长滚动也无法承载模型窗口这一关键配置。
 - 验证：`dev/run.mjs` 124/124；真实 Chrome 设置页入口/列表/详情/上下文页 0 pageerror；32k 模型预览 H=19148、L=12390；保存/重开预算一致；自动探测单测（Ollama/OpenAI 兼容字段）。
-- 提交：未发布
+- 提交：`106c874`
 
 ### 2026-10-27 · docs：补充 Chromium-only 兼容性说明
 - 改了什么：README 新增「浏览器兼容性」：Chrome 116+ / Edge/Brave/Opera 可用、Firefox/Safari 不支持；说明 Firefox 141 移除 CDP、无 `chrome.debugger`、无 `sidePanel`，以及“精简版 / BiDi 伴侣”两条替代路线的代价。手册安装节同步提示。
