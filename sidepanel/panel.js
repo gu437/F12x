@@ -4669,11 +4669,12 @@ function settingsHomeSummaryRender() {
 }
 
 function settingsContextParams() {
-  const def = modelFind(modelActiveId) || modelsCache[0] || null;
+  const editing = settingsPageName === "models" && settingsModelId ? modelFind(settingsModelId) : null;
+  const def = editing || modelFind(modelActiveId) || modelsCache[0] || null;
   const globalWindow = Number($("settings-context-window")?.value) || 0;
   return {
     window: Number(def?.contextWindow) > 0 ? Number(def.contextWindow) : (globalWindow || 32768),
-    outputReserve: Number($("settings-context-output")?.value) || 8192,
+    outputReserve: Number(def?.maxOutput) || Number($("settings-context-output")?.value) || 8192,
     highWater: (Number($("settings-context-high")?.value) || 85) / 100,
     lowWater: (Number($("settings-context-low")?.value) || 55) / 100,
     retainRatio: (Number($("settings-context-retain")?.value) || 25) / 100,
@@ -4690,8 +4691,9 @@ async function settingsContextPreview() {
   if (seq !== settingsPreviewSeq) return;
   if (!r || !r.ok) { el.textContent = "预算计算失败：" + ((r && r.error) || "后台无响应"); return; }
   const b = r.budget;
-  const src = modelFind(modelActiveId)?.contextWindow > 0
-    ? (modelFind(modelActiveId)?.windowSource === "detected" ? "模型 · 自动检测" : "模型 · 手动")
+  const shownModel = settingsPageName === "models" && settingsModelId ? modelFind(settingsModelId) : modelFind(modelActiveId);
+  const src = shownModel?.contextWindow > 0
+    ? (shownModel?.windowSource === "detected" ? "模型 · 自动检测" : "模型 · 手动")
     : (Number($("settings-context-window")?.value) > 0 ? "全局兜底" : "默认 32768");
   el.innerHTML = `窗口 <b>${b.window}</b>（${esc(src)}） · 输出预留 <b>${b.outputReserve}</b> · 安全余量 <b>${b.safety}</b><br>
     可用输入 <b>${b.usable}</b> · 触发线 <b>${b.high}</b>（${Math.round(b.highWater * 100)}%）· 压缩目标 <b>${b.low}</b>（${Math.round(b.lowWater * 100)}%） · 保留尾部 <b>${b.retain}</b>`;
