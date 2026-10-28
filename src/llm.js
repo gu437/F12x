@@ -86,7 +86,11 @@ export async function getLLMConfig() {
     apiKey: c.apiKey || result.llm_api_key || "",
     model: model,
     expertModel: dual ? result.llm_expert_model : null,
-    baseUrl: baseUrl
+    baseUrl: baseUrl,
+    contextWindow: Number(c.contextWindow) || 0,
+    maxOutput: Number(c.maxOutput) || 8192,
+    windowSource: c.windowSource || "",
+    provider: c.provider || "openai"
   };
 }
 

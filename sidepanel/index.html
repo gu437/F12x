@@ -462,64 +462,156 @@
       <button id="ai-stop-btn" class="mini-btn hidden" title="终止 AI 任务"><span data-icon="square" data-size="10"></span></button>
     </footer>
 
-    <!-- ========== 设置弹层 ========== -->
+    <!-- ========== 设置弹层（多页） ========== -->
     <div id="settings-panel" class="overlay hidden">
       <div class="overlay-content settings-sheet" role="dialog" aria-modal="true" aria-label="设置">
-        <header class="set-head">
-          <h2>设置</h2>
-          <p class="set-sub">模型连接与 AI 行为</p>
+        <header class="set-head set-head-nav">
+          <button id="settings-back" class="icon-btn set-back hidden" type="button" title="返回设置">←</button>
+          <div class="set-head-text">
+            <h2 id="settings-title">设置</h2>
+            <p id="settings-sub" class="set-sub">模型、上下文与 AI 行为</p>
+          </div>
         </header>
         <div class="set-scroll">
-          <section class="set-section">
-            <div class="set-section-head">
-              <h3>模型</h3>
-              <button id="settings-model-add" class="mini-btn" type="button">+ 添加模型</button>
+          <section class="set-page" data-set-page="home">
+            <div class="set-home-list">
+              <button class="set-home-card" type="button" data-set-go="models">
+                <span class="set-home-name">模型与连接</span>
+                <span class="set-home-desc" id="set-summary-models">连接、模型名、上下文窗口</span>
+                <span class="set-home-arrow">›</span>
+              </button>
+              <button class="set-home-card" type="button" data-set-go="context">
+                <span class="set-home-name">上下文与压缩</span>
+                <span class="set-home-desc" id="set-summary-context">触发线、压缩目标、保留尾部</span>
+                <span class="set-home-arrow">›</span>
+              </button>
+              <button class="set-home-card" type="button" data-set-go="behavior">
+                <span class="set-home-name">AI 行为</span>
+                <span class="set-home-desc" id="set-summary-behavior">批准、运行档位、思考上限</span>
+                <span class="set-home-arrow">›</span>
+              </button>
+              <button class="set-home-card" type="button" data-set-go="data">
+                <span class="set-home-name">数据与隐私</span>
+                <span class="set-home-desc">本地存储、无遥测、诊断</span>
+                <span class="set-home-arrow">›</span>
+              </button>
+              <button class="set-home-card" type="button" data-set-go="about">
+                <span class="set-home-name">关于与诊断</span>
+                <span class="set-home-desc" id="set-summary-about">版本、仓库、许可证</span>
+                <span class="set-home-arrow">›</span>
+              </button>
             </div>
-            <p class="set-desc">会话按所选模型调用；默认模型用于新会话。本地服务（127.0.0.1 / localhost）的 Key 可留空。</p>
-            <div id="settings-models" class="settings-models"></div>
           </section>
 
-          <section class="set-section">
-            <h3>生成</h3>
-            <div class="set-field">
-              <label for="settings-thinklimit">思考上限</label>
-              <input id="settings-thinklimit" type="number" min="0" step="100" placeholder="0 = 不限" />
-              <p class="set-desc">按字符计；0 表示不限，超出后自动改为直接作答。</p>
-            </div>
-            <div class="set-field">
-              <label for="settings-llm">默认 API 地址</label>
-              <textarea id="settings-llm" rows="4" spellcheck="false">https://api.deepseek.com
+          <section class="set-page hidden" data-set-page="models">
+            <section class="set-section">
+              <div class="set-section-head">
+                <h3>模型</h3>
+                <button id="settings-model-add" class="mini-btn" type="button">+ 添加模型</button>
+              </div>
+              <p class="set-desc">会话按所选模型调用；默认模型用于新会话。本地服务（127.0.0.1 / localhost）的 Key 可留空。</p>
+              <div id="settings-models" class="settings-models"></div>
+              <div id="settings-model-detail" class="settings-model-detail hidden"></div>
+            </section>
+            <section class="set-section">
+              <h3>连接回退</h3>
+              <div class="set-field">
+                <label for="settings-llm">默认 API 地址</label>
+                <textarea id="settings-llm" rows="4" spellcheck="false">https://api.deepseek.com
 https://api.openai.com
 https://api.anthropic.com
 http://localhost:11434</textarea>
-              <p class="set-desc">每行一个；首个作为未填 Base URL 时的默认地址，实际请求以模型行的 Base URL 为准。</p>
-            </div>
+                <p class="set-desc">每行一个；首个作为未填 Base URL 时的默认地址，实际请求以模型行的 Base URL 为准。</p>
+              </div>
+            </section>
           </section>
 
-          <section class="set-section">
-            <h3>行为</h3>
-            <div class="set-field">
-              <label for="settings-approval">写操作批准</label>
-              <select id="settings-approval">
-                <option value="read_auto_write_approve">读自动 / 写需批准（默认）</option>
-                <option value="full_auto">全部自动</option>
-                <option value="all_approve">全部需批准</option>
-              </select>
-              <p class="set-desc">工具执行前是否需要你确认；默认只读自动、写操作需批准。</p>
-            </div>
-            <div class="set-field">
-              <label for="settings-guard">运行档位</label>
-              <select id="settings-guard">
-                <option value="auto">自动：本地精简 · 云端完整</option>
-                <option value="lite">始终精简（关闭对抗审查 / 专家复核 / 强制探测 / plan 收尾硬门）</option>
-                <option value="full">始终完整（全部云端机制）</option>
-              </select>
-              <p class="set-desc">精简档适合本地小模型；云端大模型建议完整档。</p>
-            </div>
-            <div class="set-field set-check">
-              <label class="set-check-row" for="settings-localwarm"><input type="checkbox" id="settings-localwarm" checked /> <span>本地空闲保活</span></label>
-              <p class="set-desc">仅本地模型生效：空闲时每 40 秒发一次极小请求，减少空闲后首问的等待。</p>
-            </div>
+          <section class="set-page hidden" data-set-page="context">
+            <section class="set-section">
+              <h3>有效预算</h3>
+              <div id="settings-context-preview" class="set-budget-preview">正在计算…</div>
+              <p class="set-desc">触发线按“可用输入”计算：窗口 − 输出预留 − 安全余量。压缩只会在触发线以上发生。</p>
+            </section>
+            <section class="set-section">
+              <h3>窗口兜底</h3>
+              <div class="set-field">
+                <label for="settings-context-window">全局兜底窗口（token）</label>
+                <input id="settings-context-window" type="number" min="4096" step="1024" placeholder="留空 = 32768" />
+                <p class="set-desc">优先使用模型自己的窗口；只有模型未填时才用这里。未填任何窗口时按保守的 32768。</p>
+              </div>
+              <div class="set-field">
+                <label for="settings-context-output">输出预留（token）</label>
+                <input id="settings-context-output" type="number" min="256" step="256" placeholder="8192" />
+              </div>
+              <details class="set-advanced">
+                <summary>高级参数</summary>
+                <div class="set-field">
+                  <label for="settings-context-high">触发水位（占可用输入）</label>
+                  <input id="settings-context-high" type="number" min="50" max="95" step="1" placeholder="85" />
+                </div>
+                <div class="set-field">
+                  <label for="settings-context-low">压缩目标（占可用输入）</label>
+                  <input id="settings-context-low" type="number" min="20" max="90" step="1" placeholder="55" />
+                </div>
+                <div class="set-field">
+                  <label for="settings-context-retain">保留尾部（占可用输入）</label>
+                  <input id="settings-context-retain" type="number" min="10" max="60" step="1" placeholder="25" />
+                </div>
+              </details>
+            </section>
+            <section class="set-section">
+              <div class="set-section-head"><h3>按模型查看</h3></div>
+              <div id="settings-context-models" class="set-context-models"></div>
+            </section>
+          </section>
+
+          <section class="set-page hidden" data-set-page="behavior">
+            <section class="set-section">
+              <h3>AI 行为</h3>
+              <div class="set-field">
+                <label for="settings-thinklimit">思考上限</label>
+                <input id="settings-thinklimit" type="number" min="0" step="100" placeholder="0 = 不限" />
+                <p class="set-desc">按字符计；0 表示不限，超出后自动改为直接作答。</p>
+              </div>
+              <div class="set-field">
+                <label for="settings-approval">写操作批准</label>
+                <select id="settings-approval">
+                  <option value="read_auto_write_approve">读自动 / 写需批准（默认）</option>
+                  <option value="full_auto">全部自动</option>
+                  <option value="all_approve">全部需批准</option>
+                </select>
+                <p class="set-desc">工具执行前是否需要你确认；默认只读自动、写操作需批准。</p>
+              </div>
+              <div class="set-field">
+                <label for="settings-guard">运行档位</label>
+                <select id="settings-guard">
+                  <option value="auto">自动：本地精简 · 云端完整</option>
+                  <option value="lite">始终精简（关闭对抗审查 / 专家复核 / 强制探测 / plan 收尾硬门）</option>
+                  <option value="full">始终完整（全部云端机制）</option>
+                </select>
+                <p class="set-desc">精简档适合本地小模型；云端大模型建议完整档。</p>
+              </div>
+              <div class="set-field set-check">
+                <label class="set-check-row" for="settings-localwarm"><input type="checkbox" id="settings-localwarm" checked /> <span>本地空闲保活</span></label>
+                <p class="set-desc">仅本地模型生效：空闲时每 40 秒发一次极小请求，减少空闲后首问的等待。</p>
+              </div>
+            </section>
+          </section>
+
+          <section class="set-page hidden" data-set-page="data">
+            <section class="set-section">
+              <h3>数据与隐私</h3>
+              <p class="set-desc">F12x 没有自有后端，也不做遥测。模型配置、项目、证据、会话都保存在本机 <code>chrome.storage.local</code>；卸载扩展会一并删除。</p>
+              <p class="set-desc">设置页不会导出 API Key；项目备份请到「项目 → 备份/导入」。</p>
+            </section>
+          </section>
+
+          <section class="set-page hidden" data-set-page="about">
+            <section class="set-section">
+              <h3>关于与诊断</h3>
+              <p class="set-desc">F12x · Chrome MV3 · 本地优先。仓库：<code>github.com/gu437/F12x</code> · 许可证 AGPL-3.0-only。</p>
+              <p class="set-desc">诊断信息只包含浏览器/扩展版本、当前模型窗口来源与预算，不包含 API Key、Cookie 或请求内容。</p>
+            </section>
           </section>
         </div>
         <div class="settings-actions">

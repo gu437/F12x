@@ -676,6 +676,53 @@ body.resizing-h { cursor: ew-resize !important; user-select: none; }
 .settings-actions button.primary:hover { background: #000; }
 .settings-actions button.secondary { background: transparent; color: var(--text-2); border-color: var(--surface-4); }
 .settings-actions button.secondary:hover { background: var(--surface-2); }
+/* 多页设置：入口 → 下钻；420px 侧栏不横向滚动 */
+.set-head-nav { display: flex; align-items: flex-start; gap: 8px; }
+.set-head-text { min-width: 0; }
+.set-back { flex: none; width: 30px; height: 30px; margin-top: -2px; font-size: 18px; }
+.set-home-list { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 10px; }
+.set-home-card {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  width: 100%; text-align: left; padding: 14px 34px 14px 14px; cursor: pointer;
+  border: 1px solid var(--surface-4); border-radius: 10px; background: var(--surface-2); color: var(--text-1);
+}
+.set-home-card:hover { border-color: var(--brand, #4176e6); background: var(--surface-1); }
+.set-home-name { font-size: 13px; font-weight: 650; }
+.set-home-desc { font-size: 11.5px; color: var(--text-3); line-height: 1.5; }
+.set-home-arrow { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); color: var(--text-3); font-size: 20px; }
+.settings-model-card {
+  width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  padding: 11px 12px; border: 1px solid var(--surface-4); border-radius: 9px;
+  background: var(--surface-2); color: var(--text-1); text-align: left; cursor: pointer;
+}
+.settings-model-card:hover { border-color: var(--brand, #4176e6); background: var(--surface-1); }
+.settings-model-card .smc-top { display: flex; align-items: center; gap: 7px; width: 100%; }
+.settings-model-card .smc-name { font-size: 12.5px; font-weight: 650; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-model-card .smc-badge { flex: none; font-size: 10px; color: var(--text-3); border: 1px solid var(--surface-4); border-radius: 999px; padding: 1px 6px; }
+.settings-model-card .smc-badge.default { color: var(--brand, #4176e6); border-color: var(--brand, #4176e6); }
+.settings-model-card .smc-sub { font-size: 11px; color: var(--text-3); line-height: 1.45; overflow-wrap: anywhere; }
+.settings-model-detail { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding: 12px; border: 1px solid var(--surface-4); border-radius: 10px; background: var(--surface-2); }
+.smd-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.smd-head strong { font-size: 12.5px; }
+.smd-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.smd-grid label { display: block; font-size: 11px; color: var(--text-3); font-weight: 600; }
+.smd-grid input, .smd-grid select {
+  display: block; width: 100%; height: 34px; box-sizing: border-box; margin-top: 4px;
+  background: var(--surface-1); border: 1px solid var(--surface-4); color: var(--text-1);
+  border-radius: 7px; padding: 0 9px; font-size: 12px; outline: none;
+}
+.smd-grid input:focus, .smd-grid select:focus { border-color: var(--brand, #4176e6); }
+.smd-hint { font-size: 11px; color: var(--text-3); line-height: 1.5; }
+.smd-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.set-budget-preview { margin-top: 10px; padding: 12px; border: 1px solid var(--surface-4); border-radius: 10px; background: var(--surface-2); font-size: 11.5px; line-height: 1.8; color: var(--text-2); }
+.set-budget-preview b { color: var(--text-1); }
+.set-budget-preview .warn { color: #b26a00; }
+.set-context-models { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.set-context-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--surface-4); border-radius: 8px; font-size: 11.5px; }
+.set-context-row .muted { color: var(--text-3); }
+.set-advanced { margin-top: 12px; border-top: 1px dashed var(--surface-4); padding-top: 8px; }
+.set-advanced summary { cursor: pointer; font-size: 12px; color: var(--text-2); }
+.set-advanced .set-field { margin-top: 10px; }
 @media (prefers-reduced-motion: reduce) { .settings-sheet { animation: none; } }
 
 /* ---------- 通用弹层（modal-root） ---------- */

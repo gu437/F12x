@@ -6,12 +6,12 @@ const ACTIVE_KEY = "f12x_model_active";
 
 export async function listModels() {
   const r = await chrome.storage.local.get(MODELS_KEY);
-  return Array.isArray(r[MODELS_KEY]) ? r[MODELS_KEY] : [];
+  return Array.isArray(r[MODELS_KEY]) ? r[MODELS_KEY].map(normalizeModel) : [];
 }
 
 // 写模型列表（唯一入口：router 的 model:save / settings:save）——面板不再直接触碰存储
 export async function saveModels(list) {
-  await chrome.storage.local.set({ [MODELS_KEY]: Array.isArray(list) ? list : [] });
+  await chrome.storage.local.set({ [MODELS_KEY]: Array.isArray(list) ? list.map(normalizeModel) : [] });
 }
 
 export async function getModelById(id) {
@@ -26,11 +26,36 @@ export async function getActiveModelId() {
   return list.some(m => m.id === id) ? id : (list.length ? list[0].id : null);
 }
 
-export function modelToConfig(m) {
+// 模型条目规范化：旧条目缺字段时补默认值，不改 id/名称。
+// contextWindow 是“模型自己的窗口”，不是全局默认；0 表示未填写。
+function normalizeModel(m = {}) {
+  const cw = Number(m.contextWindow);
   return {
-    apiKey: String(m?.apiKey || "").trim(),
-    baseUrl: String(m?.baseUrl || "").trim(),
-    model: String(m?.model || "").trim()
+    ...m,
+    id: String(m.id || ""),
+    name: String(m.name || "").trim(),
+    provider: String(m.provider || "openai").trim() || "openai",
+    apiKey: String(m.apiKey || "").trim(),
+    baseUrl: String(m.baseUrl || "").trim(),
+    model: String(m.model || "").trim(),
+    contextWindow: Number.isFinite(cw) && cw > 0 ? Math.round(cw) : 0,
+    maxOutput: Number(m.maxOutput) > 0 ? Math.round(Number(m.maxOutput)) : 8192,
+    windowSource: m.windowSource === "detected" ? "detected" : (Number.isFinite(cw) && cw > 0 ? "model" : ""),
+    detectedAt: Number(m.detectedAt) || 0,
+    detectNote: String(m.detectNote || ""),
+  };
+}
+
+export function modelToConfig(m) {
+  const n = normalizeModel(m);
+  return {
+    apiKey: n.apiKey,
+    baseUrl: n.baseUrl,
+    model: n.model,
+    contextWindow: n.contextWindow,
+    maxOutput: n.maxOutput,
+    windowSource: n.windowSource,
+    provider: n.provider,
   };
 }
 

@@ -546,6 +546,7 @@ export async function createConversation(projectId, title) {
     title: title || "新对话",
     projectId: projectId || null,
     goal: "", plan: [], messages: [], lastPromptTokens: 0,
+    lastCachedTokens: 0, lastCompletionTokens: 0, lastUsageAt: 0, contextBias: 1,
     events: [], // P1：会话增量审计域（只追加：task_start/done/aborted/approval…上限 500，见 agent.sessionEvent）
     createdAt: Date.now(), updatedAt: Date.now()
   };

@@ -7,6 +7,8 @@ import { taskState, appState, pushStatus } from "./state.js";
 import { busEmit } from "./bus.js";
 import { getLLMConfig, runChat, warmLocalModel } from "./llm.js";
 import { applyModelForRun, getModelById, listModels, saveModels, getActiveModelId, setActiveModel } from "./models.js";
+import { computeContextBudget, clampContextWindow } from "./context.js";
+import { detectModelContext } from "./model_context.js";
 import { normalizeError } from "./errors.js";
 // AI 引擎静态导入（MV3 Service Worker 禁止动态 import()——HTML 规范限制；
 // "AI 隔离"由运行时 LLM 配置检查保证：未配置时工具台 100% 可用，不依赖 AI 模块加载隔离）
@@ -47,7 +49,7 @@ async function requireActiveProjectId(explicitId) {
   return p ? p.id : "";
 }
 
-const VERSION = "0.4.4";
+const VERSION = "0.5.0";
 // 手动 Intruder 的中断控制器（面板「停止」→ tool:intruder_stop 中止当前爆破）
 let manualIntruderCtl = null;
 
@@ -97,7 +99,8 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "settings:get") {
     (async () => {
       try {
-        const keys = ["llmConfig", "approvalLevel", "llm_endpoints", "f12x_thinking_limit", "f12x_guard_profile", "f12x_local_warm"];
+        const keys = ["llmConfig", "approvalLevel", "llm_endpoints", "f12x_thinking_limit", "f12x_guard_profile", "f12x_local_warm",
+          "f12x_context_window", "f12x_context_output_reserve", "f12x_context_high", "f12x_context_low", "f12x_context_retain"];
         const settings = await chrome.storage.local.get(keys);
         const [models, activeId] = await Promise.all([listModels(), getActiveModelId()]);
         sendResponse({ ok: true, settings, models, activeId: activeId || "" });
@@ -108,10 +111,15 @@ export function handleMessage(message, sender, sendResponse) {
   if (type === "settings:save") {
     (async () => {
       try {
-        const ALLOW = ["approvalLevel", "llm_endpoints", "f12x_thinking_limit", "f12x_guard_profile", "f12x_local_warm", "llmConfig"];
+        const ALLOW = ["approvalLevel", "llm_endpoints", "f12x_thinking_limit", "f12x_guard_profile", "f12x_local_warm", "llmConfig",
+          "f12x_context_window", "f12x_context_output_reserve", "f12x_context_high", "f12x_context_low", "f12x_context_retain"];
         const src = message.settings || {};
         const patch = {};
         for (const k of ALLOW) if (src[k] !== undefined) patch[k] = src[k];
+        if (patch.f12x_context_window !== undefined) patch.f12x_context_window = clampContextWindow(patch.f12x_context_window) || 0;
+        for (const k of ["f12x_context_output_reserve", "f12x_context_high", "f12x_context_low", "f12x_context_retain"]) {
+          if (patch[k] !== undefined) patch[k] = Number(patch[k]) || 0;
+        }
         if (Object.keys(patch).length) await chrome.storage.local.set(patch);
         if (Array.isArray(message.models)) await saveModels(message.models);
         if (message.activeId) await setActiveModel(message.activeId);
@@ -120,11 +128,37 @@ export function handleMessage(message, sender, sendResponse) {
     })();
     return true;
   }
+  if (type === "context:preview") {
+    // 设置页预算预览：与 agent 共用 context.js，避免面板另写一套阈值公式。
+    try {
+      const b = computeContextBudget({
+        window: message.window,
+        outputReserve: message.outputReserve,
+        safety: message.safety,
+        highWater: message.highWater,
+        lowWater: message.lowWater,
+        retainRatio: message.retainRatio,
+      });
+      sendResponse({ ok: true, budget: b });
+    } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    return true;
+  }
   if (type === "model:list") {
     (async () => {
       try {
         const [models, activeId] = await Promise.all([listModels(), getActiveModelId()]);
         sendResponse({ ok: true, models, activeId: activeId || "" });
+      } catch (e) { sendResponse({ ok: false, error: e.message }); }
+    })();
+    return true;
+  }
+  if (type === "model:detect-context") {
+    (async () => {
+      try {
+        const m = (message.model && message.model.baseUrl) ? message.model : await getModelById(message.modelId);
+        if (!m) return sendResponse({ ok: false, error: "模型不存在" });
+        const r = await detectModelContext(m);
+        sendResponse(r);
       } catch (e) { sendResponse({ ok: false, error: e.message }); }
     })();
     return true;

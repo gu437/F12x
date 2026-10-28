@@ -82,6 +82,6 @@ async function init() {
   } catch (e) {
     console.warn("[F12x] AI 引擎恢复批准失败（隔离，不影响工具台）:", e.message);
   }
-  console.log("[F12x] Service Worker 启动完成 v0.4.4");
+  console.log("[F12x] Service Worker 启动完成 v0.5.0");
 }
 init();

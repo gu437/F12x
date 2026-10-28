@@ -24,7 +24,7 @@ import {
 } from "./debugger.js";
 import {
   getLLMConfig, llmCallWithRetry, streamChatCompletion, classifyIntent, fallbackIntent, normalizeEndpoint,
-  estimateTokensV2, runChat, llmCallCounter, resetLLMCallCounter, keepAliveForLocal, isLoopbackBaseUrl
+  runChat, llmCallCounter, resetLLMCallCounter, keepAliveForLocal, isLoopbackBaseUrl
 } from "./llm.js";
 import {
   buildSkillsIndex, getProject, saveConversation, getActiveConversation, getConversation, setActiveConversation,
@@ -38,6 +38,7 @@ import {
 } from "./guards.js";
 import { runReviewAudit, TOOL_NAMES_CN } from "./experts.js";
 import { buildAnchorBlock, compactionWithSummary, isCheckpointMessage, sanitizeMessageSequence, pruneToolResults } from "./plan.js";
+import { resolveContextWindow, computeContextBudget, estimateRequestTokens, contextPercent, summaryInputBudget, updateEstimateBias, decideContextAction } from "./context.js";
 import { assembleSections, TOOL_DEFINITIONS, buildCapabilityManifest, buildEnvSection } from "./prompts.js";
 import { dispatchTool } from "./executor.js";
 import { summarizeAssets } from "./ai_assets.js";
@@ -213,15 +214,24 @@ async function readThinkingLimit() {
   } catch (e) { return 0; }
 }
 
-// 上下文窗口设置读取（storage f12x_context_window，单位 token；0/未设 = 131072）。
-// DSH compaction-basic 同语义：窗口来自配置/路由模型，阈值=0.8×窗口、保留尾部=0.16×窗口
-async function readContextWindow() {
+// 上下文设置读取（方案 010）：全局窗口只兜底；模型窗口来自 llmConfig.contextWindow。
+// 未设置全局窗口返回 0，由 context.js 走保守默认 32768，禁止静默 131072。
+async function readContextSettings() {
   try {
-    const r = await chrome.storage.local.get("f12x_context_window");
-    const v = Number(r.f12x_context_window);
-    if (Number.isFinite(v) && v > 0) return Math.max(32768, Math.min(v, 1024 * 1024));
-  } catch (e) {}
-  return 131072;
+    const r = await chrome.storage.local.get([
+      "f12x_context_window", "f12x_context_output_reserve",
+      "f12x_context_high", "f12x_context_low", "f12x_context_retain",
+    ]);
+    return {
+      globalWindow: Number(r.f12x_context_window) || 0,
+      outputReserve: Number(r.f12x_context_output_reserve) || 0,
+      highWater: Number(r.f12x_context_high) || 0,
+      lowWater: Number(r.f12x_context_low) || 0,
+      retainRatio: Number(r.f12x_context_retain) || 0,
+    };
+  } catch (e) {
+    return { globalWindow: 0, outputReserve: 0, highWater: 0, lowWater: 0, retainRatio: 0 };
+  }
 }
 
 // ===== 暂停/中断后的"上下文关联"：把本会话已发生的任务进展浓缩成摘要，
@@ -435,7 +445,18 @@ async function streamOneRound({ endpoint, config, messagesForCall, forceDirectAn
     }
     if (json.usage?.prompt_tokens) {
       const cached = json.usage.prompt_tokens_details?.cached_tokens || 0;
-      session.lastPromptTokens = Math.max(json.usage.prompt_tokens - cached, 0);
+      // 方案 010：上下文占用看总 prompt_tokens（含缓存命中）；cached 只用于成本展示。
+      session.lastPromptTokens = json.usage.prompt_tokens;
+      session.lastCachedTokens = cached;
+      session.lastCompletionTokens = json.usage.completion_tokens || 0;
+      session.lastUsageAt = Date.now();
+      if (session.contextBudget) {
+        session.contextBudget.actualTotal = session.lastPromptTokens;
+        session.contextBudget.cached = cached;
+        session.contextBudget.percent = contextPercent(session.lastPromptTokens, {
+          usable: session.contextBudget.usable || session.contextBudget.window || 32768,
+        });
+      }
     }
     if (json.usage?.completion_tokens_details?.reasoning_tokens) {
       out.lastReasoningTokens = json.usage.completion_tokens_details.reasoning_tokens;
@@ -1247,7 +1268,11 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
   }
   taskState.conv = session; // upsert_fact/get_fact 定位黑板：会话绑定项目 → 项目黑板（跨会话共享）；未绑定 → AI 全局黑板
   _lastRunConvId = session.convId; // 记录运行归属（executeTask 收尾事件用）
-  session.lastPromptTokens = 0; // 修复：lastPromptTokens 仅本轮预算有效——跨任务残留会让新任务首轮误触发预压缩
+  session.lastPromptTokens = 0; // 仅本轮预算有效；口径为总 prompt_tokens（含缓存）
+  session.lastCachedTokens = 0;
+  session.lastCompletionTokens = 0;
+  session.lastUsageAt = 0;
+  session.contextBias = 1;
   const isNewSession = !session.messages || session.messages.length === 0;
   if (isNewSession || forceReplan) {
     session.goal = userMessage;
@@ -1266,10 +1291,21 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
   const project = await getProject(session.projectId || AI_PROJECT_ID);
   const facts = project?.facts || [];
   const maxRounds = 300; // 预算裁剪保证上下文恒定，长任务可迭代数百次
-  // DSH compaction-basic 同语义：窗口来自设置（默认 131072），压力阈值=0.8×窗口，保留尾部=0.16×窗口
-  const ctxWindow = await readContextWindow();
-  const pressureThreshold = Math.max(8192, Math.floor(ctxWindow * 0.8));
-  const retainTail = Math.max(4096, Math.floor(ctxWindow * 0.16));
+  // 方案 010：W 来自本次模型（模型条目 contextWindow）；全局设置只兜底；未知模型 32768。
+  // 触发 H=0.85U，压缩目标 L=0.55U，保留尾部 R=0.25U；不再使用 0.8W / 0.16W。
+  const contextSettings = await readContextSettings();
+  const winInfo = resolveContextWindow({
+    model: { contextWindow: config.contextWindow, windowSource: config.windowSource },
+    globalWindow: contextSettings.globalWindow,
+  });
+  const budget = computeContextBudget({
+    window: winInfo.window,
+    outputReserve: Number(config.maxOutput) || contextSettings.outputReserve || 8192,
+    highWater: contextSettings.highWater || undefined,
+    lowWater: contextSettings.lowWater || undefined,
+    retainRatio: contextSettings.retainRatio || undefined,
+  });
+  const ctxWindow = budget.window;
 
   const assetSummary = await summarizeAssets(project ? project.id : "");
   const anchor = buildAnchorBlock(session, facts, debuggeeUrl, assetSummary);
@@ -1328,10 +1364,19 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
         category: f.category || "misc",
       })),
     };
+    const initialEstimate = estimateRequestTokens({ messages, toolDefs, bias: 1 });
     session.contextBudget = {
-      at: Date.now(), window: ctxWindow, pressure: pressureThreshold, retain: retainTail,
+      at: Date.now(), window: ctxWindow, windowSource: winInfo.source,
+      outputReserve: budget.outputReserve, safety: budget.safety, usable: budget.usable,
+      highWater: budget.highWater, lowWater: budget.lowWater, retainRatio: budget.retainRatio,
+      high: budget.high, low: budget.low, retain: budget.retain,
+      estimate: initialEstimate, actualTotal: session.lastPromptTokens || 0,
+      cached: session.lastCachedTokens || 0,
+      percent: contextPercent(initialEstimate, budget),
+      pressure: budget.high,
       mode: "task", profile: guardProfile.mode,
     };
+    session.contextBias = session.contextBias || 1;
     pushStatus({ type: "context:snapshot", convId: session.convId, context: session.contextFacts, budget: session.contextBudget });
   } catch (e) { /* 快照失败不影响任务 */ }
   flushSession(session, { force: true }); // 新任务即刻入库 + 广播（会话列表/记录首屏不再等任务结束）
@@ -1342,6 +1387,7 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
   // 循环状态（决策循环的全部可变标记收口于此，替代原十几个散落布尔）
   const ctx = {
     session, config, endpoint, messages, onStatus, userMessage, facts,
+    budget, toolDefs, contextBias: 1,
     abortController,
     historyStartIdx,
     aborted: false,
@@ -1418,46 +1464,48 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
     }
     if (onStatus) onStatus({ type: "round", round: round + 1, max: maxRounds, toolUse: ctx.hasToolUseThisTask, llmCalls: llmCallCounter });
 
-    // 第二层：预算裁剪（DSH compaction-basic 同语义）——
-    // 触发=估算或上轮真实 prompt_tokens > 0.8×窗口；先确定性裁剪大工具结果（对齐 ToolResultPruner，
-    // 可能无摘要即回落），仍超阈才走 LLM 摘要（保留尾部 0.16×窗口）；压后仍超阈可二次压缩（对齐 compactionRetries）
+    // 上下文预算（方案 010）：W = 当前模型窗口 → U = W - 输出预留 - 安全余量；
+    // 触发 H=0.85U，压缩目标 L=0.55U，保留尾部 R=0.25U。先确定性裁剪，仍超才摘要。
     let messagesForCall = ctx.messages;
-    const estTokens = messagesForCall.reduce((s, m) => s + estimateTokensV2(JSON.stringify(m)), 0);
-    const realPromptTokens = session.lastPromptTokens || 0;
-    if (estTokens > pressureThreshold || realPromptTokens > pressureThreshold) {
+    const estimateCall = (msgs) => estimateRequestTokens({ messages: msgs, toolDefs: ctx.toolDefs, bias: ctx.contextBias });
+    let projected = Math.max(estimateCall(messagesForCall), session.lastPromptTokens || 0);
+    const pressureAction = decideContextAction({ projected, budget: ctx.budget });
+    if (pressureAction.action !== "none") {
       const pruned = pruneToolResults(messagesForCall, { budgetChars: 4000, protectRecentTools: 3 });
       if (pruned.changed) {
         messagesForCall = pruned.messages;
+        session.lastPromptTokens = 0; // 裁剪后上一轮 actual 已失效，不能继续用它强制摘要
         try { persistSessionMessageContent(ctx, messagesForCall); } catch (e) {}
         try { flushSession(session); } catch (e) {}
       }
-      let curEst = messagesForCall.reduce((s, m) => s + estimateTokensV2(JSON.stringify(m)), 0);
-      let realCur = session.lastPromptTokens || 0;
+      projected = estimateCall(messagesForCall);
       let everSummarized = false;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        if (!(curEst > pressureThreshold || realCur > pressureThreshold)) break;
-        if (attempt === 0 && onStatus) onStatus({ type: "ai:compaction", trigger: "pressure", at: Math.round(curEst) }); // §十一：压缩进度（stream）
+      for (let attempt = 0; attempt < 2 && projected > ctx.budget.high; attempt++) {
+        if (attempt === 0 && onStatus) onStatus({ type: "ai:compaction", trigger: "preflight", at: projected, percent: contextPercent(projected, ctx.budget) });
         let compMethod = null, compInfo = null;
         messagesForCall = await compactionWithSummary(messagesForCall, {
           config, endpoint, systemContent,
-          maxTokens: pressureThreshold, retainTokens: retainTail, summaryMaxTokens: 8192,
-          force: realCur > pressureThreshold,
+          maxTokens: ctx.budget.low,
+          retainTokens: ctx.budget.retain,
+          summaryMaxTokens: 8192,
+          historyBudget: summaryInputBudget(ctx.budget, 8192),
+          force: false,
           signal: abortController.signal,
           onCompacted: (method, info) => { compMethod = method; compInfo = info || null; }
         });
-        applyCompactionResult(messagesForCall, compMethod, compInfo, "pressure", Math.round(curEst));
+        applyCompactionResult(messagesForCall, compMethod, compInfo, "preflight", projected);
         if (!compMethod) break; // 无可压区间（单轮超大等）→ 停止
         everSummarized = true;
-        curEst = messagesForCall.reduce((s, m) => s + estimateTokensV2(JSON.stringify(m)), 0);
-        realCur = 0; // 本轮尚无新请求：真实 usage 下一轮才更新——二次压缩只看压缩后估算，防陈旧真实值重复压
-        if (curEst > pressureThreshold) {
-          // 一次压缩后仍超阈（罕见：超大单轮/保留尾部仍大）→ 更激进：放宽保护再裁（对齐 compactionRetries）
+        session.lastPromptTokens = 0; // 压缩后旧 actual 失效，下一轮重新观测
+        projected = estimateCall(messagesForCall);
+        if (projected > ctx.budget.high) {
+          // 一次压缩后仍超阈 → 放宽保护再裁；仍超则交给 provider overflow 路径兜底
           messagesForCall = pruneToolResults(messagesForCall, { budgetChars: 2000, protectRecentTools: 1 }).messages;
-          curEst = messagesForCall.reduce((s, m) => s + estimateTokensV2(JSON.stringify(m)), 0);
+          projected = estimateCall(messagesForCall);
         }
       }
-      if (pruned.changed && !everSummarized) {
-        console.warn(`[Agent] compaction 裁剪即回落（est ${Math.round(curEst)} ≤ ${pressureThreshold}，real ${realCur}）——无摘要推进（对齐 DSH ToolResultPruner）`);
+      if (!everSummarized) {
+        console.warn(`[Agent] compaction 裁剪即回落（est ${projected} ≤ ${ctx.budget.high}）——无摘要推进`);
       }
       if (messagesForCall !== ctx.messages) ctx.messages = messagesForCall; // 裁剪/压缩结果长期生效（含续跑）
     }
@@ -1465,6 +1513,7 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
     if (onStatus) onStatus({ type: "thinking_text", text: ctx.noThink ? `第 ${round + 1} 轮执行（已禁思考）...` : `第 ${round + 1} 轮思考...`, round });
 
     let out;
+    const estimateBeforeCall = estimateCall(messagesForCall);
     try {
       out = await streamOneRound({ endpoint, config, messagesForCall, forceDirectAnswer: ctx.forceDirectAnswer, session, signal: abortController.signal, onStatus, round, thinkingLimit, toolDefs: toolDefsForMode(ctx.g, TOOL_DEFINITIONS) });
     } catch (e) {
@@ -1473,18 +1522,21 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
       if (e.contextOverflow && !overflowRetried) {
         overflowRetried = true;
         if (onStatus) onStatus({ type: "ai:compaction", trigger: "overflow" }); // §十一：压缩进度（stream）
-        // DSH 同语义：provider 确认溢出可绕过常规阈值/保留策略（maxOverflowRetries）——强制、保留更少尾部
+        // provider 确认溢出：强制压缩到更低的 emergency 目标（0.4U），保留更少尾部
         let compMethod = null, compInfo = null;
         messagesForCall = await compactionWithSummary(messagesForCall, {
           config, endpoint, systemContent,
-          maxTokens: Math.max(8192, Math.floor(pressureThreshold * 0.9)),
-          retainTokens: Math.max(2048, Math.floor(retainTail * 0.5)),
-          summaryMaxTokens: 8192, force: true,
+          maxTokens: Math.max(4096, Math.floor(ctx.budget.usable * 0.4)),
+          retainTokens: Math.max(2048, Math.floor(ctx.budget.retain * 0.5)),
+          summaryMaxTokens: 8192,
+          historyBudget: summaryInputBudget(ctx.budget, 8192),
+          force: true,
           signal: abortController.signal,
           onCompacted: (method, info) => { compMethod = method; compInfo = info || null; }
         });
         applyCompactionResult(messagesForCall, compMethod, compInfo, "overflow", 0);
-        console.warn(`[Agent] 上下文溢出——已强制裁剪（${messagesForCall.length} 条消息，保留尾部 ${Math.floor(retainTail * 0.5)}t）重试`);
+        session.lastPromptTokens = 0;
+        console.warn(`[Agent] 上下文溢出——已强制压缩（${messagesForCall.length} 条消息，目标 ${Math.floor(ctx.budget.usable * 0.4)}t）重试`);
         round--;
         continue;
       }
@@ -1495,6 +1547,10 @@ export async function runAgentLoop(userMessage, onStatus, opts = {}) {
       await pushStatus({ type: "ai:error", code: normalizeError(e).code, error: e.message });
       finalAnswer = `LLM 调用失败：${e.message}`;
       break;
+    }
+    if (session.lastPromptTokens > 0 && estimateBeforeCall > 0) {
+      ctx.contextBias = updateEstimateBias(ctx.contextBias, session.lastPromptTokens, estimateBeforeCall);
+      session.contextBias = ctx.contextBias;
     }
     ctx.forceDirectAnswer = ctx.noThink ? 2 : 0; // 每轮重置；禁思考时恒为 2（thinking:disabled）
 

@@ -222,6 +222,36 @@ export function checkpointSummaryText(m) {
   return idx >= 0 ? s.slice(idx + 2) : s.replace(COMPACT_CP_PREFIX, "").trim();
 }
 
+// 摘要输入本身必须有总预算：保留最早 2 条 + 最近若干条，中间用省略标记，
+// 避免“被丢弃历史 200 条 × 8000 字符”把压缩请求自己撑爆（方案 010 P3）。
+function buildSummaryHistory(msgs, budgetTokens = 12000) {
+  const entries = (msgs || []).map((m) => {
+    const c = m.content || (m.tool_calls ? JSON.stringify(m.tool_calls) : "") || "";
+    return `[${m.role}] ${String(c).substring(0, 8000)}`;
+  });
+  if (!entries.length) return "";
+  const budget = Math.max(1000, Number(budgetTokens) || 12000);
+  const selected = new Array(entries.length).fill(false);
+  const cost = entries.map((s) => estimateTokensV2(s) + 8);
+  let used = 0;
+  for (let i = 0; i < Math.min(2, entries.length); i++) { selected[i] = true; used += cost[i]; }
+  for (let i = entries.length - 1; i >= 2; i--) {
+    if (used + cost[i] > budget) break;
+    selected[i] = true;
+    used += cost[i];
+  }
+  const out = [];
+  let omitted = 0;
+  for (let i = 0; i < entries.length; i++) {
+    if (selected[i]) {
+      if (omitted) { out.push(`…[已省略 ${omitted} 条中间消息]…`); omitted = 0; }
+      out.push(entries[i]);
+    } else omitted++;
+  }
+  if (omitted) out.push(`…[已省略 ${omitted} 条中间消息]…`);
+  return out.join("\n\n");
+}
+
 export async function compactionWithSummary(messages, opts = {}) {
   // DSH compaction-basic 同语义：maxTokens=压力阈值（0.8×窗口），retainTokens=保留尾部（0.16×窗口），
   // summaryMaxTokens=摘要生成上限（默认 8192）；force=true 时忽略 early-return（provider 已确认溢出场景）
@@ -262,10 +292,12 @@ export async function compactionWithSummary(messages, opts = {}) {
 
   const droppedMsgs = drop.flatMap(r => r.msgs);
   const droppedTokens = droppedMsgs.reduce((s, m) => s + estimateTokensV2(JSON.stringify(m)), 0);
-  const historyText = droppedMsgs.map(m => {
-    const c = m.content || (m.tool_calls ? JSON.stringify(m.tool_calls) : "") || "";
-    return `[${m.role}] ${String(c).substring(0, 8000)}`;
-  }).join("\n\n");
+  const prefix = buildCompactionPrefix(messages, opts.systemContent);
+  const rawSummaryBudget = Number(opts.historyBudget) || 0;
+  const totalSummaryBudget = rawSummaryBudget > 0 ? rawSummaryBudget : 12000;
+  const promptReserve = estimateTokensV2(JSON.stringify(prefix)) + estimateTokensV2(COMPACT_INSTRUCTION) + 512;
+  const historyBudget = Math.max(1000, totalSummaryBudget - promptReserve);
+  const historyText = buildSummaryHistory(droppedMsgs, historyBudget);
 
   let summary = "";
   try {
@@ -277,7 +309,7 @@ export async function compactionWithSummary(messages, opts = {}) {
         messages: [
           // KV 缓存友好（§7.2）：前缀与主请求同源且配对安全（buildCompactionPrefix）；
           // 修复（审读高）：原 slice(0,3) 切断 tool 配对致 400；opts.systemContent 现在真正生效
-          ...buildCompactionPrefix(messages, opts.systemContent),
+          ...prefix,
           { role: "user", content: COMPACT_INSTRUCTION + "\n\n<history>\n" + historyText + "\n</history>" }
         ],
         max_tokens: summaryMaxTokens,

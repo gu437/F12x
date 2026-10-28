@@ -4223,7 +4223,10 @@ function renderContextPanel(conv) {
   const compTxt = comps.length ? `压缩 ${comps.length} 次` : "尚未压缩";
   sum.textContent = `🧠 上下文：${c.projectName ? "项目「" + c.projectName + "」" : "未绑定项目"} · 事实 ${items.length}/${c.total || items.length} · ${compTxt}`;
   const b = conv.contextBudget;
-  const budget = b ? `窗口 ${b.window} · 压力阈值 ${b.pressure} · 保留尾部 ${b.retain}` : "";
+  const srcLabel = { model: "模型", detected: "自动检测", global: "全局", default: "默认 32768" }[b && b.windowSource] || "";
+  const budget = b
+    ? `窗口 ${b.window}${srcLabel ? "（" + srcLabel + "）" : ""} · 实际 ${b.actualTotal || 0} · 估算 ${b.estimate || 0}（${b.percent || 0}%） · 触发 ${b.high || b.pressure || "?"} · 目标 ${b.low || "?"}`
+    : "";
   const compDetail = last
     ? `最近压缩：${esc(last.method || "?")} / ${esc(last.trigger || "?")}${last.at ? " @" + esc(String(last.at)) + "t" : ""} · ${new Date(last.ts || 0).toLocaleString()}（${ctxAgo(last.ts)}）`
     : "";
@@ -4372,23 +4375,56 @@ function chatOnStatus(st) {
 
 
 // ============================================================
+let settingsPageName = "home";
+let settingsModelId = "";
+
+function settingsShowPage(name) {
+  settingsPageName = name;
+  document.querySelectorAll("#settings-panel [data-set-page]").forEach((el) => {
+    el.classList.toggle("hidden", el.dataset.setPage !== name);
+  });
+  const titles = {
+    home: ["设置", "模型、上下文与 AI 行为"],
+    models: ["模型与连接", "模型窗口直接决定压缩触发"],
+    context: ["上下文与压缩", "窗口 → 可用输入 → 触发线 / 压缩目标"],
+    behavior: ["AI 行为", "批准、档位与生成"],
+    data: ["数据与隐私", "本地存储，无遥测"],
+    about: ["关于与诊断", "版本、仓库与诊断"],
+  };
+  const t = titles[name] || titles.home;
+  $("settings-title").textContent = t[0];
+  $("settings-sub").textContent = t[1];
+  $("settings-back").classList.toggle("hidden", name === "home");
+  document.querySelector(".settings-actions").classList.toggle("hidden", name === "home");
+  if (name === "models") settingsModelsRender();
+  if (name === "context") settingsContextRender();
+}
+
 function initSettings() {
   $("settings-toggle").addEventListener("click", openSettings);
   $("settings-cancel").addEventListener("click", () => $("settings-panel").classList.add("hidden"));
   $("settings-save").addEventListener("click", saveSettings);
+  $("settings-back").addEventListener("click", () => settingsShowPage("home"));
   $("settings-panel").addEventListener("click", (e) => {
     if (e.target === $("settings-panel")) $("settings-panel").classList.add("hidden");
   });
-  // 悬浮球功能已移除：AI 全部迁入 AI 页签聊天工作台
-  // 模型：添加按钮（缓存必先经 openSettings/modelsLoad 载入，否则视为空列表起加）
+  document.querySelectorAll("#settings-panel [data-set-go]").forEach((b) => {
+    b.addEventListener("click", () => settingsShowPage(b.dataset.setGo));
+  });
+  // 上下文参数实时预览（统一走后台 context:preview，避免面板另写一套公式）
+  ["settings-context-window", "settings-context-output", "settings-context-high", "settings-context-low", "settings-context-retain"].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener("input", () => settingsContextPreview());
+  });
   const addBtn = $("settings-model-add");
   if (addBtn) addBtn.addEventListener("click", () => {
-    modelsCache.push({ id: modelGid(), name: "", apiKey: "", baseUrl: "", model: "" });
-    settingsModelsRender();
-    const first = $("settings-models")?.querySelector(".smr-name");
+    const m = { id: modelGid(), name: "", provider: "openai", apiKey: "", baseUrl: "", model: "", contextWindow: 0, maxOutput: 8192, windowSource: "" };
+    modelsCache.push(m);
+    settingsModelId = m.id;
+    settingsShowPage("models");
+    settingsModelDetailRender();
+    const first = $("settings-model-detail")?.querySelector("input");
     if (first) first.focus();
-    const curDef = modelFind(modelActiveId);
-    toast("已添加模型；当前默认仍是 " + (curDef ? (modelName(curDef) || "旧配置") : "—") + "，如需切换请点该行行首「默认」，或在聊天框模型下拉里选择");
   });
 }
 
@@ -4405,24 +4441,38 @@ async function openSettings() {
   // 旧版单配置迁移：仅有 llmConfig 而无模型列表 → 生成一条“默认”，避免升级后配置丢失
   const c = cfg.llmConfig || {};
   if (!modelsCache.length && (c.baseUrl || c.model || c.apiKey)) {
-    modelsCache = [{ id: modelGid(), name: "默认", apiKey: c.apiKey || "", baseUrl: c.baseUrl || "", model: c.model || "" }];
+    modelsCache = [{ id: modelGid(), name: "默认", provider: "openai", apiKey: c.apiKey || "", baseUrl: c.baseUrl || "", model: c.model || "", contextWindow: c.contextWindow || 0, maxOutput: c.maxOutput || 8192, windowSource: c.windowSource || "" }];
   }
   if (!modelsCache.some(m => m.id === modelActiveId)) modelActiveId = modelsCache[0]?.id || "";
+  settingsModelId = "";
   $("settings-thinklimit").value = Number(cfg.f12x_thinking_limit) > 0 ? Number(cfg.f12x_thinking_limit) : "";
-  // 修复（审读中）：LLM 端点列表框回填（原 open 不读取——用户上次保存的列表永不显示）
   $("settings-llm").value = (Array.isArray(cfg.llm_endpoints) && cfg.llm_endpoints.length ? cfg.llm_endpoints : ["https://api.deepseek.com", "https://api.openai.com", "https://api.anthropic.com", "http://localhost:11434"]).join("\n");
   $("settings-approval").value = cfg.approvalLevel || "read_auto_write_approve";
   $("settings-guard").value = ["auto", "lite", "full"].includes(cfg.f12x_guard_profile) ? cfg.f12x_guard_profile : "auto";
   $("settings-localwarm").checked = cfg.f12x_local_warm !== false;
-  settingsModelsRender();
+  $("settings-context-window").value = Number(cfg.f12x_context_window) > 0 ? Number(cfg.f12x_context_window) : "";
+  $("settings-context-output").value = Number(cfg.f12x_context_output_reserve) > 0 ? Number(cfg.f12x_context_output_reserve) : 8192;
+  $("settings-context-high").value = Number(cfg.f12x_context_high) > 0 ? Math.round(Number(cfg.f12x_context_high) * 100) : 85;
+  $("settings-context-low").value = Number(cfg.f12x_context_low) > 0 ? Math.round(Number(cfg.f12x_context_low) * 100) : 55;
+  $("settings-context-retain").value = Number(cfg.f12x_context_retain) > 0 ? Math.round(Number(cfg.f12x_context_retain) * 100) : 25;
+  settingsShowPage("home");
   $("settings-panel").classList.remove("hidden");
 }
 
 async function saveSettings() {
   // 模型：先做轻校验再持久化（用户即批准人——保存即生效）
   const trimmed = modelsCache.map(m => ({
-    id: m.id, name: String(m.name || "").trim(),
-    apiKey: String(m.apiKey || "").trim(), baseUrl: String(m.baseUrl || "").trim(), model: String(m.model || "").trim()
+    id: m.id,
+    name: String(m.name || "").trim(),
+    provider: String(m.provider || "openai").trim() || "openai",
+    apiKey: String(m.apiKey || "").trim(),
+    baseUrl: String(m.baseUrl || "").trim(),
+    model: String(m.model || "").trim(),
+    contextWindow: Number(m.contextWindow) > 0 ? Math.round(Number(m.contextWindow)) : 0,
+    maxOutput: Number(m.maxOutput) > 0 ? Math.round(Number(m.maxOutput)) : 8192,
+    windowSource: m.windowSource === "detected" ? "detected" : (Number(m.contextWindow) > 0 ? "model" : ""),
+    detectedAt: Number(m.detectedAt) || 0,
+    detectNote: String(m.detectNote || ""),
   }));
   if (!trimmed.some(m => m.id === modelActiveId)) modelActiveId = trimmed.length ? trimmed[0].id : "";
   const active = trimmed.find(m => m.id === modelActiveId) || null;
@@ -4433,13 +4483,32 @@ async function saveSettings() {
     else return toast("API Key 不能为空（本地回环服务可留空）");
   }
   if (active && (!active.baseUrl || !active.model)) return toast("默认模型需填写 Base URL 与模型名");
+  if (active && active.contextWindow > 0 && active.maxOutput >= active.contextWindow) return toast("最大输出必须小于上下文窗口");
+  const high = Number($("settings-context-high").value) || 85;
+  const low = Number($("settings-context-low").value) || 55;
+  const retain = Number($("settings-context-retain").value) || 25;
+  if (high <= low) return toast("触发水位必须高于压缩目标");
+  if (low <= retain) return toast("压缩目标必须高于保留尾部");
   modelsCache = trimmed;
-  const cfg = { approvalLevel: $("settings-approval").value, f12x_guard_profile: ["auto", "lite", "full"].includes($("settings-guard").value) ? $("settings-guard").value : "auto", f12x_local_warm: !!$("settings-localwarm").checked };
+  const cfg = {
+    approvalLevel: $("settings-approval").value,
+    f12x_guard_profile: ["auto", "lite", "full"].includes($("settings-guard").value) ? $("settings-guard").value : "auto",
+    f12x_local_warm: !!$("settings-localwarm").checked,
+  };
   cfg.llm_endpoints = $("settings-llm").value.split("\n").map(s => s.trim()).filter(Boolean);
   const tl = parseInt($("settings-thinklimit").value, 10);
   cfg.f12x_thinking_limit = Number.isFinite(tl) && tl > 0 ? tl : 0;
+  cfg.f12x_context_window = Number($("settings-context-window").value) > 0 ? Number($("settings-context-window").value) : 0;
+  cfg.f12x_context_output_reserve = Number($("settings-context-output").value) > 0 ? Number($("settings-context-output").value) : 8192;
+  cfg.f12x_context_high = high / 100;
+  cfg.f12x_context_low = low / 100;
+  cfg.f12x_context_retain = retain / 100;
   // 运行引擎读取的仍是 llmConfig：用“默认模型”同步（会话覆盖在运行前单独解析）
-  cfg.llmConfig = active ? { apiKey: active.apiKey, baseUrl: active.baseUrl, model: active.model } : { apiKey: "", baseUrl: "", model: "" };
+  cfg.llmConfig = active ? {
+    apiKey: active.apiKey, baseUrl: active.baseUrl, model: active.model,
+    contextWindow: active.contextWindow, maxOutput: active.maxOutput,
+    windowSource: active.windowSource, provider: active.provider,
+  } : { apiKey: "", baseUrl: "", model: "", contextWindow: 0, maxOutput: 8192 };
   // 统一交给后台落库（模型 CRUD + 设置键的唯一入口）；面板不再直接写这些键
   const saved = await api("settings:save", {
     settings: {
@@ -4448,7 +4517,12 @@ async function saveSettings() {
       f12x_local_warm: cfg.f12x_local_warm,
       f12x_thinking_limit: cfg.f12x_thinking_limit,
       llm_endpoints: cfg.llm_endpoints,
-      llmConfig: cfg.llmConfig
+      llmConfig: cfg.llmConfig,
+      f12x_context_window: cfg.f12x_context_window,
+      f12x_context_output_reserve: cfg.f12x_context_output_reserve,
+      f12x_context_high: cfg.f12x_context_high,
+      f12x_context_low: cfg.f12x_context_low,
+      f12x_context_retain: cfg.f12x_context_retain,
     },
     models: modelsCache,
     activeId: active ? active.id : ""
@@ -4480,35 +4554,162 @@ function modelFind(id) { return modelsCache.find(m => m.id === id) || null; }
 
 function settingsModelsRender() {
   const wrap = $("settings-models");
+  const detail = $("settings-model-detail");
   if (!wrap) return;
-  if (!modelsCache.length) modelsCache.push({ id: modelGid(), name: "默认", apiKey: "", baseUrl: "", model: "" });
+  if (!modelsCache.length) modelsCache.push({ id: modelGid(), name: "默认", provider: "openai", apiKey: "", baseUrl: "", model: "", contextWindow: 0, maxOutput: 8192, windowSource: "" });
   if (!modelsCache.some(m => m.id === modelActiveId)) modelActiveId = modelsCache[0].id;
-  wrap.innerHTML = modelsCache.map((m, idx) => `
-    <div class="settings-model-row">
-      <div class="smr-top">
-        <label class="smr-def ${m.id === modelActiveId ? "active" : ""}" title="设为默认（新会话跟随；本设置页内即改即生效）"><input type="radio" name="smr-default" value="${esc(m.id)}" ${m.id === modelActiveId ? "checked" : ""} />默认</label>
-        <input class="text-input smr-name" type="text" placeholder="模型名称（如 DeepSeek / 本地 Qwen）" value="${esc(m.name || "")}" data-idx="${idx}" data-f="name" />
-        <button type="button" class="mini-btn danger" data-del="${idx}" title="删除该模型">删除</button>
-      </div>
-      <div class="smr-fields">
-        <label class="smr-label">Base URL<input class="text-input" type="text" placeholder="http://127.0.0.1:11434" value="${esc(m.baseUrl || "")}" data-idx="${idx}" data-f="baseUrl" /></label>
-        <label class="smr-label">API Key<input class="text-input" type="password" placeholder="本地回环可留空" value="${esc(m.apiKey || "")}" data-idx="${idx}" data-f="apiKey" /></label>
-        <label class="smr-label">模型名<input class="text-input" type="text" placeholder="qwen2.5:7b / deepseek-chat" value="${esc(m.model || "")}" data-idx="${idx}" data-f="model" /></label>
-      </div>
-    </div>`).join("");
-  wrap.querySelectorAll("input").forEach((inp) => {
-    if (inp.type === "radio") {
-      inp.addEventListener("change", () => { if (inp.checked) { modelActiveId = inp.value; settingsModelsRender(); } });
-    } else {
-      inp.addEventListener("input", () => { const m = modelsCache[+inp.dataset.idx]; if (m) m[inp.dataset.f] = inp.value; });
+  if (detail) detail.classList.add("hidden");
+  wrap.classList.remove("hidden");
+  wrap.innerHTML = modelsCache.map((m) => {
+    const cw = Number(m.contextWindow) > 0 ? Math.round(Number(m.contextWindow) / 1000) + "k" : "窗口未填";
+    const src = m.windowSource === "detected" ? "自动检测" : (Number(m.contextWindow) > 0 ? "手动" : "待设置");
+    return `<button class="settings-model-card" type="button" data-model-open="${esc(m.id)}">
+      <span class="smc-top"><span class="smc-name">${esc(modelName(m))}</span>${m.id === modelActiveId ? '<span class="smc-badge default">默认</span>' : ""}<span class="smc-badge">${esc(cw)} · ${esc(src)}</span></span>
+      <span class="smc-sub">${esc(m.model || "未填模型名")}${m.baseUrl ? " · " + esc(m.baseUrl) : ""}</span>
+    </button>`;
+  }).join("");
+  wrap.querySelectorAll("[data-model-open]").forEach((b) => b.addEventListener("click", () => {
+    settingsModelId = b.dataset.modelOpen;
+    settingsModelDetailRender();
+  }));
+  settingsHomeSummaryRender();
+  if (settingsPageName === "context") settingsContextRender();
+}
+
+function settingsModelDetailRender() {
+  const wrap = $("settings-models");
+  const detail = $("settings-model-detail");
+  const m = modelFind(settingsModelId);
+  if (!wrap || !detail || !m) return;
+  wrap.classList.add("hidden");
+  detail.classList.remove("hidden");
+  const loopback = /^(https?:\/\/)?(localhost|127\.0\.0\.1|::1|\[::1\]|0\.0\.0\.0)(:|\/|$)/i.test(String(m.baseUrl || ""));
+  detail.innerHTML = `
+    <div class="smd-head"><strong>${esc(modelName(m))}</strong><button class="mini-btn" type="button" data-smd-back>← 列表</button></div>
+    <div class="smd-grid">
+      <label>显示名<input data-f="name" value="${esc(m.name || "")}" placeholder="DeepSeek / 本地 Qwen" /></label>
+      <label>提供方<select data-f="provider">
+        <option value="openai"${m.provider === "openai" || !m.provider ? " selected" : ""}>OpenAI 兼容</option>
+        <option value="anthropic"${m.provider === "anthropic" ? " selected" : ""}>Anthropic</option>
+        <option value="gemini"${m.provider === "gemini" ? " selected" : ""}>Gemini</option>
+        <option value="ollama"${m.provider === "ollama" ? " selected" : ""}>Ollama</option>
+        <option value="lmstudio"${m.provider === "lmstudio" ? " selected" : ""}>LM Studio</option>
+        <option value="custom"${m.provider === "custom" ? " selected" : ""}>自定义</option>
+      </select></label>
+      <label>Base URL<input data-f="baseUrl" value="${esc(m.baseUrl || "")}" placeholder="http://127.0.0.1:11434" /></label>
+      <label>API Key<input data-f="apiKey" type="password" value="${esc(m.apiKey || "")}" placeholder="${loopback ? "本地回环可留空" : "必填"}" /></label>
+      <label>模型名<input data-f="model" value="${esc(m.model || "")}" placeholder="deepseek-chat / qwen2.5:7b" /></label>
+      <label>上下文窗口（token）<input data-f="contextWindow" type="number" min="4096" step="1024" value="${Number(m.contextWindow) > 0 ? Number(m.contextWindow) : ""}" placeholder="留空 = 自动/全局兜底" /></label>
+      <label>最大输出（token）<input data-f="maxOutput" type="number" min="256" step="256" value="${Number(m.maxOutput) || 8192}" /></label>
+    </div>
+    <div class="smd-hint" id="smd-window-hint">${Number(m.contextWindow) > 0 ? "窗口来源：" + (m.windowSource === "detected" ? "自动检测" : "手动") + " · 直接决定压缩触发" : "窗口留空：保存后按全局兜底/32768 计算，建议填写"}</div>
+    <div class="smd-actions" style="justify-content:flex-start"><button class="mini-btn" type="button" data-smd-detect>自动检测窗口</button></div>
+    <label class="set-check-row" style="margin-top:2px"><input type="checkbox" data-smd-default ${m.id === modelActiveId ? "checked" : ""} /> <span>设为默认模型</span></label>
+    <div class="smd-actions">
+      <button class="mini-btn danger" type="button" data-smd-del>删除模型</button>
+      <button class="mini-btn" type="button" data-smd-back>返回列表</button>
+    </div>`;
+  detail.querySelectorAll("[data-f]").forEach((inp) => {
+    inp.addEventListener("input", () => {
+      const f = inp.dataset.f;
+      if (f === "contextWindow" || f === "maxOutput") {
+        m[f] = Number(inp.value) > 0 ? Math.round(Number(inp.value)) : 0;
+        if (f === "contextWindow") m.windowSource = m[f] > 0 ? "model" : "";
+      } else m[f] = inp.value;
+      if (f === "contextWindow") {
+        const hint = $("smd-window-hint");
+        if (hint) hint.textContent = m.contextWindow > 0 ? "窗口来源：手动 · 直接决定压缩触发" : "窗口留空：保存后按全局兜底/32768 计算，建议填写";
+        settingsContextPreview();
+      }
+    });
+  });
+  const detect = detail.querySelector("[data-smd-detect]");
+  if (detect) detect.addEventListener("click", async () => {
+    detect.disabled = true;
+    detect.textContent = "检测中…";
+    try {
+      const r = await api("model:detect-context", { model: { id: m.id, provider: m.provider, baseUrl: m.baseUrl, apiKey: m.apiKey, model: m.model } });
+      if (!r || !r.ok) return toast("未检测到窗口：" + ((r && r.error) || "未知错误"));
+      m.contextWindow = Number(r.window) || 0;
+      m.windowSource = "detected";
+      m.detectedAt = Date.now();
+      m.detectNote = r.note || "";
+      const inp = detail.querySelector('[data-f="contextWindow"]');
+      if (inp) inp.value = m.contextWindow;
+      const hint = $("smd-window-hint");
+      if (hint) hint.textContent = "窗口来源：自动检测 · 直接决定压缩触发";
+      toast("已检测：窗口 " + m.contextWindow + " token");
+      settingsContextPreview();
+    } finally {
+      detect.disabled = false;
+      detect.textContent = "自动检测窗口";
     }
   });
-  wrap.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
-    modelsCache.splice(+b.dataset.del, 1);
-    if (modelsCache.length && !modelsCache.some(m => m.id === modelActiveId)) modelActiveId = modelsCache[0].id;
+  const def = detail.querySelector("[data-smd-default]");
+  if (def) def.addEventListener("change", () => { if (def.checked) modelActiveId = m.id; settingsModelsRender(); settingsModelDetailRender(); });
+  detail.querySelectorAll("[data-smd-back]").forEach((b) => b.addEventListener("click", () => settingsModelsRender()));
+  const del = detail.querySelector("[data-smd-del]");
+  if (del) del.addEventListener("click", () => {
+    if (modelsCache.length <= 1) return toast("至少保留一个模型");
+    modelsCache = modelsCache.filter(x => x.id !== m.id);
+    if (!modelsCache.some(x => x.id === modelActiveId)) modelActiveId = modelsCache[0]?.id || "";
+    settingsModelId = "";
     settingsModelsRender();
-  }));
+  });
 }
+
+function settingsHomeSummaryRender() {
+  const def = modelFind(modelActiveId) || modelsCache[0] || null;
+  const sm = $("set-summary-models");
+  if (sm) sm.textContent = def ? `${modelName(def)} · ${Number(def.contextWindow) > 0 ? Math.round(Number(def.contextWindow) / 1000) + "k" : "窗口未填"}` : "连接、模型名、上下文窗口";
+  const sb = $("set-summary-behavior");
+  if (sb) sb.textContent = `${$("settings-approval")?.value === "full_auto" ? "全部自动" : ($("settings-approval")?.value === "all_approve" ? "全部批准" : "读自动 / 写批准")} · ${$("settings-guard")?.value || "auto"}`;
+  const sa = $("set-summary-about");
+  if (sa) sa.textContent = "版本、仓库、许可证";
+}
+
+function settingsContextParams() {
+  const def = modelFind(modelActiveId) || modelsCache[0] || null;
+  const globalWindow = Number($("settings-context-window")?.value) || 0;
+  return {
+    window: Number(def?.contextWindow) > 0 ? Number(def.contextWindow) : (globalWindow || 32768),
+    outputReserve: Number($("settings-context-output")?.value) || 8192,
+    highWater: (Number($("settings-context-high")?.value) || 85) / 100,
+    lowWater: (Number($("settings-context-low")?.value) || 55) / 100,
+    retainRatio: (Number($("settings-context-retain")?.value) || 25) / 100,
+  };
+}
+
+let settingsPreviewSeq = 0;
+async function settingsContextPreview() {
+  const el = $("settings-context-preview");
+  if (!el) return;
+  const seq = ++settingsPreviewSeq;
+  const p = settingsContextParams();
+  const r = await api("context:preview", p);
+  if (seq !== settingsPreviewSeq) return;
+  if (!r || !r.ok) { el.textContent = "预算计算失败：" + ((r && r.error) || "后台无响应"); return; }
+  const b = r.budget;
+  const src = modelFind(modelActiveId)?.contextWindow > 0
+    ? (modelFind(modelActiveId)?.windowSource === "detected" ? "模型 · 自动检测" : "模型 · 手动")
+    : (Number($("settings-context-window")?.value) > 0 ? "全局兜底" : "默认 32768");
+  el.innerHTML = `窗口 <b>${b.window}</b>（${esc(src)}） · 输出预留 <b>${b.outputReserve}</b> · 安全余量 <b>${b.safety}</b><br>
+    可用输入 <b>${b.usable}</b> · 触发线 <b>${b.high}</b>（${Math.round(b.highWater * 100)}%）· 压缩目标 <b>${b.low}</b>（${Math.round(b.lowWater * 100)}%） · 保留尾部 <b>${b.retain}</b>`;
+  const sc = $("set-summary-context");
+  if (sc) sc.textContent = `触发 ${b.high} → 目标 ${b.low}`;
+}
+
+function settingsContextRender() {
+  const box = $("settings-context-models");
+  if (box) {
+    box.innerHTML = modelsCache.map((m) => {
+      const cw = Number(m.contextWindow) > 0 ? Number(m.contextWindow) : 0;
+      return `<div class="set-context-row"><span>${esc(modelName(m))}</span><span class="${cw ? "" : "muted"}">${cw ? cw + " · " + (m.windowSource === "detected" ? "自动检测" : "手动") : "未填写"}</span></div>`;
+    }).join("") || '<p class="set-desc">还没有模型。</p>';
+  }
+  settingsContextPreview();
+}
+
 
 // 聊天输入框上方的模型选择器（值 = 模型 id；空 = 默认模型）
 async function chatModelRefresh() {
