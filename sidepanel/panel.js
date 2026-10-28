@@ -4422,6 +4422,30 @@ function initSettings() {
   $("settings-panel").addEventListener("click", (e) => {
     if (e.target === $("settings-panel")) closeSettings();
   });
+  $("settings-diag-copy")?.addEventListener("click", async () => {
+    const diag = settingsDiagPayload();
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(diag, null, 2));
+      toast("诊断信息已复制（不含 API Key / Cookie / 请求内容）");
+    } catch (e) { toast("复制失败：" + (e.message || "剪贴板不可用")); }
+  });
+  $("settings-export")?.addEventListener("click", async () => {
+    const r = await api("settings:get");
+    if (!r || !r.ok) return toast("读取设置失败");
+    const safe = {
+      version: chrome.runtime.getManifest().version,
+      settings: { ...r.settings, llmConfig: { ...(r.settings.llmConfig || {}), apiKey: "" } },
+      models: (r.models || []).map(({ apiKey, ...m }) => m),
+      activeId: r.activeId || "",
+    };
+    const blob = new Blob([JSON.stringify(safe, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "f12x-settings-" + new Date().toISOString().slice(0, 10) + ".json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast("已导出设置（API Key 已移除）");
+  });
   document.querySelectorAll("#settings-panel [data-set-go]").forEach((b) => {
     b.addEventListener("click", () => settingsShowPage(b.dataset.setGo));
   });
@@ -4719,6 +4743,35 @@ async function settingsContextPreview() {
   if (sc) sc.textContent = `触发 ${b.high} → 目标 ${b.low}`;
 }
 
+function settingsDiagPayload() {
+  const m = modelFind(modelActiveId) || modelsCache[0] || null;
+  const b = aiDetailConv && aiDetailConv.contextBudget;
+  return {
+    version: chrome.runtime.getManifest().version,
+    browser: navigator.userAgent,
+    activeModel: m ? { name: modelName(m), model: m.model, contextWindow: m.contextWindow, windowSource: m.windowSource } : null,
+    contextBudget: b ? {
+      window: b.window, windowSource: b.windowSource, usable: b.usable,
+      high: b.high, low: b.low, retain: b.retain,
+      actualTotal: b.actualTotal || 0, cached: b.cached || 0, percent: b.percent || 0,
+    } : null,
+    compactions: (aiDetailConv && Array.isArray(aiDetailConv.events) ? aiDetailConv.events.filter((e) => e && e.type === "compaction").length : 0),
+  };
+}
+
+function settingsCurrentContextRender() {
+  const el = $("settings-current-context");
+  if (!el) return;
+  const b = aiDetailConv && aiDetailConv.contextBudget;
+  if (!b) {
+    el.textContent = "未打开会话；打开一个 AI 会话后显示实际/估算占用。";
+    return;
+  }
+  const comps = (aiDetailConv.events || []).filter((e) => e && e.type === "compaction").length;
+  el.innerHTML = `窗口 <b>${b.window || "?"}</b>（${esc({ model: "模型", detected: "自动检测", global: "全局", default: "默认 32768" }[b.windowSource] || "未知")}） · 实际 <b>${b.actualTotal || 0}</b> · 估算 <b>${b.estimate || 0}</b>（${b.percent || 0}%）<br>
+    触发 <b>${b.high || "?"}</b> · 目标 <b>${b.low || "?"}</b> · 保留 <b>${b.retain || "?"}</b> · 已压缩 <b>${comps}</b> 次`;
+}
+
 function settingsContextRender() {
   const box = $("settings-context-models");
   if (box) {
@@ -4728,6 +4781,7 @@ function settingsContextRender() {
     }).join("") || '<p class="set-desc">还没有模型。</p>';
   }
   settingsContextPreview();
+  settingsCurrentContextRender();
 }
 
 

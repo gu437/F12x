@@ -533,6 +533,10 @@ http://localhost:11434</textarea>
               <p class="set-desc">触发线按“可用输入”计算：窗口 − 输出预留 − 安全余量。压缩只会在触发线以上发生。</p>
             </section>
             <section class="set-section">
+              <h3>当前会话</h3>
+              <div id="settings-current-context" class="set-budget-preview">未打开会话；打开一个 AI 会话后显示实际/估算占用。</div>
+            </section>
+            <section class="set-section">
               <h3>窗口兜底</h3>
               <div class="set-field">
                 <label for="settings-context-window">全局兜底窗口（token）</label>
@@ -603,6 +607,10 @@ http://localhost:11434</textarea>
               <h3>数据与隐私</h3>
               <p class="set-desc">F12x 没有自有后端，也不做遥测。模型配置、项目、证据、会话都保存在本机 <code>chrome.storage.local</code>；卸载扩展会一并删除。</p>
               <p class="set-desc">设置页不会导出 API Key；项目备份请到「项目 → 备份/导入」。</p>
+              <div class="smd-actions" style="justify-content:flex-start;margin-top:12px">
+                <button id="settings-diag-copy" class="mini-btn" type="button">复制诊断信息</button>
+                <button id="settings-export" class="mini-btn" type="button">导出设置（不含 Key）</button>
+              </div>
             </section>
           </section>
 
